@@ -67,16 +67,12 @@ class Request:
         self.qs = qs
 
 
-async def default_catchall(req: Request, resp: Response):
-    resp.status = "404 Not Found"
-    return "Not Found"
-
-
 class WebServer:
     def __init__(self) -> None:
         self.routes = {}
         self.static = "/static"
-        self._catchall = default_catchall
+        self._catchall_handler = self.default_catchall
+        self._error_handler = self.default_error_handler
 
     def route(self, path: str, methods: list[str] | None = None):
         def wrapper(handler):
@@ -89,11 +85,27 @@ class WebServer:
         for method in methods if methods is not None else ["GET"]:
             self.routes[(method, path)] = handler
 
+    @staticmethod
+    async def default_catchall(req: Request, resp: Response):
+        resp.status = "404 Not Found"
+        return "Not Found"
+
     def catchall(self, handler):
         self.set_catchall(handler)
 
     def set_catchall(self, handler):
-        self._catchall = handler
+        self._catchall_handler = handler
+
+    @staticmethod
+    async def default_error_handler(req: Request, resp: Response, error: BaseException):
+        resp.status = "500 Internal Server Error"
+        return f"{type(error)}: {error}"
+
+    def error_handler(self, handler):
+        self.set_error_handler(handler)
+
+    def set_error_handler(self, handler):
+        self._error_handler = handler
 
     @staticmethod
     async def _write_status(writer, resp: Response) -> None:
@@ -170,13 +182,13 @@ class WebServer:
                 await self._respond_file(writer, resp, self.static + req.path)
 
             else:
-                ret = await self._catchall(req, resp)
+                ret = await self._catchall_handler(req, resp)
                 resp.body = ret if ret is not None else resp.body
                 await self._respond(writer, resp)
 
         except Exception as e:
-            resp.status = "500 Internal Server Error"
-            resp.body = f"{type(e).__name__}: {e}"
+            ret = await self._error_handler(req, resp, e)
+            resp.body = ret if ret is not None else resp.body
             await self._respond(writer, resp)
 
     async def _handle(self, reader, writer):
