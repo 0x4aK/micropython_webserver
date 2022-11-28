@@ -6,7 +6,6 @@ import uasyncio
 
 READ_BUFFER_SIZE = micropython.const(1024)
 WRITE_BUFFER_SIZE = micropython.const(128)
-
 FILE_INDICATOR = micropython.const(0x8000)
 
 
@@ -77,7 +76,7 @@ class WebServer:
     def __init__(self) -> None:
         self.routes = {}
         self.static = "/static"
-        self.catchall = default_catchall
+        self._catchall = default_catchall
 
     def route(self, path: str, methods: list[str] | None = None):
         def wrapper(handler):
@@ -89,6 +88,12 @@ class WebServer:
     def add_route(self, path: str, handler, methods: list[str] | None = None):
         for method in methods if methods is not None else ["GET"]:
             self.routes[(method, path)] = handler
+
+    def catchall(self, handler):
+        self.set_catchall(handler)
+
+    def set_catchall(self, handler):
+        self._catchall = handler
 
     @staticmethod
     async def _write_status(writer, resp: Response) -> None:
@@ -111,21 +116,12 @@ class WebServer:
     @staticmethod
     def _parse_request(unparsed: str) -> Request:
         req_line, unparsed = unparsed.split("\r\n", 1)
+
         method, raw_path, version = parse_request(req_line)
-
-        del req_line
-        gc.collect()
-
         path, qs = parse_path(raw_path)
-
-        del raw_path
-        gc.collect()
 
         req_headers, body = unparsed.split("\r\n\r\n", 1)
         headers = parse_headers(req_headers)
-
-        del req_headers
-        gc.collect()
 
         return Request(method, path, version, headers, qs, body)
 
@@ -174,7 +170,7 @@ class WebServer:
                 await self._respond_file(writer, resp, self.static + req.path)
 
             else:
-                ret = await self.catchall(req, resp)
+                ret = await self._catchall(req, resp)
                 resp.body = ret if ret is not None else resp.body
                 await self._respond(writer, resp)
 
