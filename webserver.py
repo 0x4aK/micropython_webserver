@@ -175,7 +175,7 @@ class WebServer:
             if handler := self.routes.get((req.method, req.path)):
                 results = await handler(req, resp)
 
-            elif fsize := get_file_size(self.static + req.path):
+            elif req.method == "GET" and (fsize := get_file_size(self.static + req.path)):
                 resp.add_header("Content-Length", str(fsize))
                 await self._respond_file(writer, resp, self.static + req.path)
                 return
