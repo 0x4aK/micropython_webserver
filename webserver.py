@@ -13,17 +13,21 @@ def parse_request(unparsed: str) -> tuple[str, str, str]:
     return tuple(unparsed.split(" ", 2))
 
 
+def parse_headers(unparsed: str) -> dict[str, str]:
+    return dict(h.split(": ", 1) for h in unparsed.split("\r\n"))
+
+
+def parse_qs(unparsed: str) -> dict[str, str]:
+    return dict(q.split("=", 1) if "=" in q else [q, ""] for q in unparsed.split("&"))
+
+
 def parse_path(unparsed: str) -> tuple[str, dict[str, str]]:
-    path, raw_qs = unparsed.split("?", 1) if "?" in unparsed else (unparsed, "")
+    path, raw_qs = unparsed.split("?", 1) if "?" in unparsed else (unparsed, None)
 
     return (
         path if not (path.endswith("/")) else path + "index.html",
-        dict(q.split("=", 1) if "=" in q else [q, ""] for q in raw_qs.split("&")),
+        parse_qs(raw_qs) if raw_qs is not None else {},
     )
-
-
-def parse_headers(unparsed: str) -> dict[str, str]:
-    return dict(h.split(": ", 1) for h in unparsed.split("\r\n"))
 
 
 def get_file_size(path: str) -> int | None:
@@ -217,5 +221,4 @@ class WebServer:
             await uasyncio.gather(writer.wait_closed(), reader.wait_closed())
 
     async def run(self, host: str = "0.0.0.0", port: int = 80):
-        # TODO: Make this better
-        await uasyncio.start_server(self._handle, host, port)
+        return await uasyncio.start_server(self._handle, host, port)
