@@ -152,7 +152,11 @@ class WebServer:
 
         mime_types = {
             "css": "text/css",
+            "png": "image/png",
             "html": "text/html",
+            "jpg": "image/jpeg",
+            "jpeg": "image/jpeg",
+            "svg": "image/svg+xml",
             "json": "application/json",
             "js": "application/javascript",
         }
@@ -199,7 +203,7 @@ class WebServer:
             req = self._parse_request(raw)
             del raw
 
-        except Exception as e:
+        except Exception:
             resp.status = "400 Bad Request"
             resp.body = f"Coudn't understand the request"
             await self._respond(writer, resp)
