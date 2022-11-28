@@ -209,7 +209,7 @@ class WebServer:
 
         except Exception:
             resp.status = "400 Bad Request"
-            resp.body = f"Coudn't understand the request"
+            resp.body = "Bad Request"
             await self._respond(writer, resp)
 
         else:
