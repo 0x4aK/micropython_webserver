@@ -173,23 +173,23 @@ class WebServer:
     async def _handle_request(self, writer, req: Request, resp: Response):
         try:
             if handler := self.routes.get((req.method, req.path)):
-                ret = await handler(req, resp)
-                resp.body = ret if ret is not None else resp.body
-                await self._respond(writer, resp)
+                results = await handler(req, resp)
 
             elif fsize := get_file_size(self.static + req.path):
                 resp.add_header("Content-Length", str(fsize))
                 await self._respond_file(writer, resp, self.static + req.path)
+                return
 
             else:
-                ret = await self._catchall_handler(req, resp)
-                resp.body = ret if ret is not None else resp.body
-                await self._respond(writer, resp)
+                results = await self._catchall_handler(req, resp)
 
         except Exception as e:
-            ret = await self._error_handler(req, resp, e)
-            resp.body = ret if ret is not None else resp.body
-            await self._respond(writer, resp)
+            results = await self._error_handler(req, resp, e)
+
+        if results is not None:
+            resp.body = results
+
+        await self._respond(writer, resp)
 
     async def _handle(self, reader, writer):
         resp = Response()
@@ -201,7 +201,7 @@ class WebServer:
 
         except Exception as e:
             resp.status = "400 Bad Request"
-            resp.body = f"{type(e).__name__}: {str(e)}"
+            resp.body = f"Coudn't understand the request"
             await self._respond(writer, resp)
 
         else:
