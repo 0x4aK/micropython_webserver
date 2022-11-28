@@ -99,7 +99,7 @@ class WebServer:
     @staticmethod
     async def default_error_handler(req: Request, resp: Response, error: BaseException):
         resp.status = "500 Internal Server Error"
-        return f"{type(error)}: {error}"
+        return f"{type(error).__name__}: {error}"
 
     def error_handler(self, handler):
         self.set_error_handler(handler)
@@ -193,9 +193,9 @@ class WebServer:
 
     async def _handle(self, reader, writer):
         resp = Response()
+        raw: str = (await reader.read(READ_BUFFER_SIZE)).decode()
 
         try:
-            raw: str = (await reader.read(READ_BUFFER_SIZE)).decode()
             req = self._parse_request(raw)
             del raw
 
