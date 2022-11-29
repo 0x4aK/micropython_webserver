@@ -205,9 +205,12 @@ class WebServer:
         try:
             raw: str = (await reader.read(READ_BUFFER_SIZE)).decode()
             req = self._parse_request(raw)
+
             del raw
+            gc.collect()
 
         except Exception:
+            gc.collect()
             resp.status = "400 Bad Request"
             resp.body = "Bad Request"
             await self._respond(writer, resp)
