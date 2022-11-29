@@ -201,9 +201,9 @@ class WebServer:
 
     async def _handle(self, reader, writer):
         resp = Response()
-        raw: str = (await reader.read(READ_BUFFER_SIZE)).decode()
 
         try:
+            raw: str = (await reader.read(READ_BUFFER_SIZE)).decode()
             req = self._parse_request(raw)
             del raw
 
