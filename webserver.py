@@ -118,6 +118,8 @@ class WebServer:
 
     @staticmethod
     async def _write_headers(writer, resp: Response) -> None:
+        writer.write(f"Content-Type: {resp.content_type}\r\n")
+
         for header, value in resp.headers.items():
             writer.write(f"{header}: {value}\r\n")
 
