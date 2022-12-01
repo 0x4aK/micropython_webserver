@@ -21,12 +21,12 @@ def parse_qs(unparsed: str) -> dict[str, str]:
     return dict(q.split("=", 1) if "=" in q else [q, ""] for q in unparsed.split("&"))
 
 
-def parse_path(unparsed: str) -> tuple[str, dict[str, str]]:
+def parse_path(unparsed: str) -> tuple[str, dict[str, str] | None]:
     path, raw_qs = unparsed.split("?", 1) if "?" in unparsed else (unparsed, None)
 
     return (
         path if not (path.endswith("/")) else path + "index.html",
-        parse_qs(raw_qs) if raw_qs is not None else {},
+        parse_qs(raw_qs) if raw_qs is not None else None,
     )
 
 
@@ -60,7 +60,7 @@ class Request:
         path: str,
         version: str,
         headers: dict[str, str],
-        qs: dict[str, str],
+        qs: dict[str, str] | None,
         body: str,
     ) -> None:
         self.path = path
@@ -87,7 +87,7 @@ class WebServer:
 
     def add_route(self, path: str, handler, methods: list[str] | None = None):
         for method in methods if methods is not None else ["GET"]:
-            self.routes[(method, path)] = handler
+            self.routes[(method.upper(), path)] = handler
 
     @staticmethod
     async def default_catchall(req: Request, resp: Response):
@@ -113,41 +113,42 @@ class WebServer:
 
     @staticmethod
     async def _write_status(writer, resp: Response) -> None:
-        writer.write(f"HTTP/1.1 {resp.status}\r\n")
+        writer.write(f"HTTP/1.1 {resp.status}\r\n".encode())
         await writer.drain()
 
     @staticmethod
     async def _write_headers(writer, resp: Response) -> None:
-        writer.write(f"Content-Type: {resp.content_type}\r\n")
+        writer.write(f"Content-Type: {resp.content_type}\r\n".encode())
+        await writer.drain()
 
         for header, value in resp.headers.items():
-            writer.write(f"{header}: {value}\r\n")
+            writer.write(f"{header}: {value}\r\n".encode())
+            await writer.drain()
 
-        writer.write("\r\n")
+        writer.write(b"\r\n")
         await writer.drain()
 
     @staticmethod
     async def _write_body(writer, resp: Response) -> None:
-        writer.write(str(resp.body))
+        writer.write(str(resp.body).encode())
         await writer.drain()
 
     @staticmethod
-    def _parse_request(unparsed: str) -> Request:
-        req_line, unparsed = unparsed.split("\r\n", 1)
-
-        method, raw_path, version = parse_request(req_line)
+    def _parse_request(unparsed: bytes) -> Request:
+        req_line_end = unparsed.find(b"\r\n")
+        method, raw_path, version = parse_request(unparsed[:req_line_end].decode())
         path, qs = parse_path(raw_path)
 
-        req_headers, body = unparsed.split("\r\n\r\n", 1)
-        headers = parse_headers(req_headers)
+        headers_end = unparsed.find(b"\r\n\r\n")
+        headers = parse_headers(unparsed[req_line_end + 2 : headers_end].decode())
 
-        return Request(method, path, version, headers, qs, body)
+        return Request(method, path, version, headers, qs, unparsed[headers_end + 4 :].decode())
 
     async def _respond(self, writer, resp: Response):
         await self._write_status(writer, resp)
 
         if resp.body is not None:
-            resp.add_header("Content-Length", str(len(resp.body)))
+            resp.add_header("Content-Length", str(len(resp.body.encode())))
             await self._write_headers(writer, resp)
             await self._write_body(writer, resp)
 
@@ -205,25 +206,21 @@ class WebServer:
         resp = Response()
 
         try:
-            raw: str = (await reader.read(READ_BUFFER_SIZE)).decode()
-            req = self._parse_request(raw)
+            req = self._parse_request(await reader.read(READ_BUFFER_SIZE))
 
-            del raw
-            gc.collect()
-
-        except Exception:
+        except Exception as e:
             gc.collect()
             resp.status = "400 Bad Request"
             resp.body = "Bad Request"
             await self._respond(writer, resp)
 
         else:
+            gc.collect()
             await self._handle_request(writer, req, resp)
 
         finally:
             writer.close()
-            reader.close()
-            await uasyncio.gather(writer.wait_closed(), reader.wait_closed())
+            await writer.wait_closed()
 
     async def run(self, host: str = "0.0.0.0", port: int = 80):
         return await uasyncio.start_server(self._handle, host, port)
