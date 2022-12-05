@@ -180,12 +180,12 @@ class WebServer:
 
     async def _handle_request(self, writer, req: Request, resp: Response):
         try:
+            path = self.static + req.path + ("index.html" if req.path.endswith("/") else "")
+
             if handler := self.routes.get((req.method, req.path)):
                 results = await handler(req, resp)
 
-            path = self.static + req.path + "index.html" if req.path.endswith("/") else ""
-
-            if (
+            elif (
                 req.method == "GET"
                 and "gzip" in req.headers.get("Accept-Encoding", "")
                 and (fsize := get_file_size(path + ".gz"))
