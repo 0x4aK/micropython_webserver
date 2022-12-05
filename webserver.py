@@ -23,11 +23,7 @@ def parse_qs(unparsed: str) -> dict[str, str]:
 
 def parse_path(unparsed: str) -> tuple[str, dict[str, str] | None]:
     path, raw_qs = unparsed.split("?", 1) if "?" in unparsed else (unparsed, None)
-
-    return (
-        path if not (path.endswith("/")) else path + "index.html",
-        parse_qs(raw_qs) if raw_qs is not None else None,
-    )
+    return path, parse_qs(raw_qs) if raw_qs is not None else None
 
 
 def get_file_size(path: str) -> int | None:
@@ -187,19 +183,21 @@ class WebServer:
             if handler := self.routes.get((req.method, req.path)):
                 results = await handler(req, resp)
 
-            elif (
+            path = self.static + req.path + "index.html" if req.path.endswith("/") else ""
+
+            if (
                 req.method == "GET"
                 and "gzip" in req.headers.get("Accept-Encoding", "")
-                and (fsize := get_file_size(self.static + req.path + ".gz"))
+                and (fsize := get_file_size(path + ".gz"))
             ):
                 resp.add_header("Content-Length", str(fsize))
                 resp.add_header("Content-Encoding", "gzip")
-                await self._respond_file(writer, resp, self.static + req.path + ".gz")
+                await self._respond_file(writer, resp, path + ".gz")
                 return
 
-            elif req.method == "GET" and (fsize := get_file_size(self.static + req.path)):
+            elif req.method == "GET" and (fsize := get_file_size(path)):
                 resp.add_header("Content-Length", str(fsize))
-                await self._respond_file(writer, resp, self.static + req.path)
+                await self._respond_file(writer, resp, path)
                 return
 
             else:
