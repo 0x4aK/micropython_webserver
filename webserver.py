@@ -168,7 +168,8 @@ class WebServer:
             "js": "application/javascript",
         }
 
-        if mime_type := mime_types.get(path.rsplit(".", 1)[-1]):
+        exts = path.rsplit(".", 2)
+        if mime_type := mime_types.get(exts[-2] if exts[-1] == "gz" else exts[-1]):
             resp.content_type = mime_type
 
         await self._write_status(writer, resp)
@@ -185,6 +186,16 @@ class WebServer:
         try:
             if handler := self.routes.get((req.method, req.path)):
                 results = await handler(req, resp)
+
+            elif (
+                req.method == "GET"
+                and "gzip" in req.headers.get("Accept-Encoding", "")
+                and (fsize := get_file_size(self.static + req.path + ".gz"))
+            ):
+                resp.add_header("Content-Length", str(fsize))
+                resp.add_header("Content-Encoding", "gzip")
+                await self._respond_file(writer, resp, self.static + req.path + ".gz")
+                return
 
             elif req.method == "GET" and (fsize := get_file_size(self.static + req.path)):
                 resp.add_header("Content-Length", str(fsize))
