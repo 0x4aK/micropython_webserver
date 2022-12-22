@@ -92,6 +92,7 @@ class WebServer:
 
     def catchall(self, handler):
         self.set_catchall(handler)
+        return handler
 
     def set_catchall(self, handler):
         self._catchall_handler = handler
@@ -103,6 +104,7 @@ class WebServer:
 
     def error_handler(self, handler):
         self.set_error_handler(handler)
+        return handler
 
     def set_error_handler(self, handler):
         self._error_handler = handler
