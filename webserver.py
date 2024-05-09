@@ -1,52 +1,117 @@
 import gc
 import os
+from asyncio import StreamReader, start_server
 
-import micropython
-import uasyncio
+try:
+    import micropython  # type: ignore
+except ImportError:
+    from types import SimpleNamespace
 
-READ_BUFFER_SIZE = micropython.const(1024)
-WRITE_BUFFER_SIZE = micropython.const(128)
-FILE_INDICATOR = micropython.const(0x8000)
+    micropython = SimpleNamespace(const=lambda i: i)
 
-
-def parse_request(unparsed: str) -> tuple[str, str, str]:
-    return tuple(unparsed.split(" ", 2))
-
-
-def parse_headers(unparsed: str) -> dict[str, str]:
-    return dict(h.split(": ", 1) for h in unparsed.split("\r\n"))
+_READ_SIZE = micropython.const(256)
+_WRITE_BUFFER_SIZE = micropython.const(128)
+_FILE_INDICATOR = micropython.const(1 << 16)
 
 
-def parse_qs(unparsed: str) -> dict[str, str]:
-    return dict(q.split("=", 1) if "=" in q else [q, ""] for q in unparsed.split("&"))
+def _raise(e: Exception):
+    raise e
 
 
-def parse_path(unparsed: str) -> tuple[str, dict[str, str] | None]:
-    path, raw_qs = unparsed.split("?", 1) if "?" in unparsed else (unparsed, None)
-    return path, parse_qs(raw_qs) if raw_qs is not None else None
+def _parse_request(raw: str) -> tuple[str, str, str]:
+    r = raw.split(" ", 2)
+    m, p, v = r if len(r) == 3 else _raise(ValueError("Invalid request line"))
+    return m, p, v
 
 
-def get_file_size(path: str) -> int | None:
+def _parse_header(header: str) -> tuple[str, str]:
+    n, _, v = header.partition(": ")
+    return n.lower(), v
+
+
+def _parse_headers(raw: str) -> dict[str, str]:
+    return dict(map(_parse_header, raw.split("\r\n")))
+
+
+def _parse_qsv(qkv: str) -> tuple[str, str]:
+    k, _, v = qkv.partition("=")
+    return k, v
+
+
+def _parse_qs(raw: str) -> dict[str, str]:
+    return dict(map(_parse_qsv, raw.split("&")))
+
+
+def _parse_path(raw: str) -> tuple[str, dict[str, str] | None]:
+    p, rqs = raw.split("?", 1) if "?" in raw else (raw, None)
+    return p, _parse_qs(rqs) if rqs is not None else None
+
+
+def _get_file_size(path: str) -> int | None:
     try:
         stat = os.stat(path)
     except OSError:
         return None
-
-    if stat[0] ^ FILE_INDICATOR != 0:
+    if stat[0] & _FILE_INDICATOR != 0:
         return None
-
     return stat[6]
 
 
+class _FileInfo:
+    def __init__(self, path: str, size: int, encoding: str | None = None) -> None:
+        self.path = path
+        self.size = size
+        self.encoding = encoding
+
+
+class _Reader:
+    def __init__(self, stream: StreamReader):
+        self.b = b""
+        self.s = stream
+
+    async def readuntil(self, sep=b"\n"):
+        while (i := self.b.find(sep)) < 0 and (d := await self.s.read(_READ_SIZE)):
+            self.b += d
+
+        r, self.b = self.b[:i], self.b[i + len(sep) :]
+        return r.decode()
+
+    async def readexactly(self, n: int):
+        while len(self.b) < n and (d := await self.s.read(_READ_SIZE)):
+            self.b += d
+
+        r, self.b = self.b[:n], self.b[n:]
+        return r.decode()
+
+
+class _Body:
+    def __set__(self, i, v: str | None):
+        setattr(i, "_body", v and v.encode())
+
+    def __get__(self, i, objtype=None) -> bytes | None:
+        return getattr(i, "_body", None)
+
+
 class Response:
-    def __init__(self) -> None:
-        self.headers: dict[str, str] = {"Connection": "close"}
+    body = _Body()
+
+    def __init__(self):
+        self.headers: dict[str, str] = {"connection": "close"}
         self.content_type = "text/plain"
-        self.body: str | None = None
+        self.body = None
         self.status = "200 OK"
 
-    def add_header(self, header: str, value: str):
+    def set_header(self, header: str, value: str):
         self.headers[header] = value
+
+    def set_status(self, status: str):
+        self.status = status
+
+    def set_body(self, body: str):
+        self.body = body
+
+    def set_content_type(self, content_type: str):
+        self.content_type = content_type
 
 
 class Request:
@@ -57,7 +122,7 @@ class Request:
         version: str,
         headers: dict[str, str],
         qs: dict[str, str] | None,
-        body: str,
+        body: str | None,
     ) -> None:
         self.path = path
         self.method = method
@@ -66,27 +131,46 @@ class Request:
         self.body = body
         self.qs = qs
 
+    @classmethod
+    async def from_stream(cls, stream: StreamReader) -> "Request":
+        r = _Reader(stream)
+
+        m, rp, v = _parse_request(await r.readuntil(b"\r\n"))
+        p, qs = _parse_path(rp)
+        h = _parse_headers(await r.readuntil(b"\r\n\r\n"))
+        b = await r.readexactly(int(bl)) if (bl := h.get("content-length")) else None
+        return cls(m, p, v, h, qs, b)
+
 
 class WebServer:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        host: str = "0.0.0.0",
+        port: int = 80,
+        static_folder: str = "static",
+    ) -> None:
+        self.host = host
+        self.port = port
         self.routes = {}
-        self.static = "/static"
-        self._catchall_handler = self.default_catchall
-        self._error_handler = self.default_error_handler
+        self.static = static_folder
+        self._cah = self._dch  # Catch-all handler
+        self._eh = self._deh  # Error handler
 
-    def route(self, path: str, methods: list[str] | None = None):
+    def route(self, path: str, methods: tuple[str, ...] = ("GET",)):
         def wrapper(handler):
             self.add_route(path, handler, methods)
             return handler
 
         return wrapper
 
-    def add_route(self, path: str, handler, methods: list[str] | None = None):
-        for method in methods if methods is not None else ["GET"]:
+    def add_route(self, path: str, handler, methods: tuple[str, ...] = ("GET",)):
+        for method in methods:
             self.routes[(method.upper(), path)] = handler
 
     @staticmethod
-    async def default_catchall(req: Request, resp: Response):
+    async def _dch(req: Request, resp: Response):
+        "Default catch-all handler"
         resp.status = "404 Not Found"
         return "Not Found"
 
@@ -95,143 +179,140 @@ class WebServer:
         return handler
 
     def set_catchall(self, handler):
-        self._catchall_handler = handler
+        self._cah = handler
 
     @staticmethod
-    async def default_error_handler(req: Request, resp: Response, error: BaseException):
+    async def _deh(req: Request, resp: Response, error: BaseException):
+        "Default error handler"
         resp.status = "500 Internal Server Error"
-        return f"{type(error).__name__}: {error}"
+        return f"Error: {str(error)}"
 
     def error_handler(self, handler):
         self.set_error_handler(handler)
         return handler
 
     def set_error_handler(self, handler):
-        self._error_handler = handler
+        self._eh = handler
 
     @staticmethod
-    async def _write_status(writer, resp: Response) -> None:
-        writer.write(f"HTTP/1.1 {resp.status}\r\n".encode())
-        await writer.drain()
+    async def _write_status(w, resp: Response):
+        w.write(f"HTTP/1.1 {resp.status}\r\n".encode())
+        await w.drain()
 
     @staticmethod
-    async def _write_headers(writer, resp: Response) -> None:
-        writer.write(f"Content-Type: {resp.content_type}\r\n".encode())
-        await writer.drain()
+    async def _write_headers(w, resp: Response):
+        w.write(f"content-type: {resp.content_type}\r\n".encode())
+        await w.drain()
 
         for header, value in resp.headers.items():
-            writer.write(f"{header}: {value}\r\n".encode())
-            await writer.drain()
+            w.write(f"{header}: {value}\r\n".encode())
+            await w.drain()
 
-        writer.write(b"\r\n")
-        await writer.drain()
-
-    @staticmethod
-    async def _write_body(writer, resp: Response) -> None:
-        writer.write(str(resp.body).encode())
-        await writer.drain()
+        w.write(b"\r\n")
+        await w.drain()
 
     @staticmethod
-    def _parse_request(unparsed: bytes) -> Request:
-        req_line_end = unparsed.find(b"\r\n")
-        method, raw_path, version = parse_request(unparsed[:req_line_end].decode())
-        path, qs = parse_path(raw_path)
+    async def _write_body(w, resp: Response):
+        w.write(resp.body)
+        await w.drain()
 
-        headers_end = unparsed.find(b"\r\n\r\n")
-        headers = parse_headers(unparsed[req_line_end + 2 : headers_end].decode())
-
-        return Request(method, path, version, headers, qs, unparsed[headers_end + 4 :].decode())
-
-    async def _respond(self, writer, resp: Response):
-        await self._write_status(writer, resp)
+    async def _respond(self, w, resp: Response):
+        await self._write_status(w, resp)
 
         if resp.body is not None:
-            resp.add_header("Content-Length", str(len(resp.body.encode())))
-            await self._write_headers(writer, resp)
-            await self._write_body(writer, resp)
+            resp.set_header("content-length", str(len(resp.body)))
+            await self._write_headers(w, resp)
+            await self._write_body(w, resp)
 
         else:
-            await self._write_headers(writer, resp)
+            await self._write_headers(w, resp)
 
-    async def _respond_file(self, writer, resp: Response, path: str):
-
-        mime_types = {
+    async def _respond_file(self, w, resp: Response, path: str):
+        mts = {
             "css": "text/css",
             "png": "image/png",
             "html": "text/html",
             "jpg": "image/jpeg",
             "jpeg": "image/jpeg",
+            "ico": "image/x-icon",
             "svg": "image/svg+xml",
             "json": "application/json",
             "js": "application/javascript",
         }
 
         exts = path.rsplit(".", 2)
-        if mime_type := mime_types.get(exts[-2] if exts[-1] == "gz" else exts[-1]):
-            resp.content_type = mime_type
+        if mt := mts.get(exts[-2] if exts[-1] == "gz" else exts[-1]):
+            resp.content_type = mt
 
-        await self._write_status(writer, resp)
-        await self._write_headers(writer, resp)
+        await self._write_status(w, resp)
+        await self._write_headers(w, resp)
 
-        write_buffer = bytearray(WRITE_BUFFER_SIZE)
-
+        wb = bytearray(_WRITE_BUFFER_SIZE)
         with open(path, "rb") as f:
-            while f.readinto(write_buffer):
-                writer.write(write_buffer)
-                await writer.drain()
+            while f.readinto(wb):
+                w.write(wb)
+                await w.drain()
 
-    async def _handle_request(self, writer, req: Request, resp: Response):
+    def _get_static(self, req: Request):
+        path = "./" + self.static + req.path + ("index.html" if req.path.endswith("/") else "")
+
+        if (
+            (en := req.headers.get("accept-encoding"))
+            and "gzip" in en
+            and (fsize := _get_file_size(path + ".gz"))
+        ):
+            return _FileInfo(path + ".gz", fsize, "gzip")
+
+        elif fsize := _get_file_size(path):
+            return _FileInfo(path, fsize)
+
+    async def _handle_static(self, w, fi: _FileInfo, resp: Response):
+        resp.set_header("content-length", str(fi.size))
+        if fi.encoding:
+            resp.set_header("content-encoding", fi.encoding)
+        await self._respond_file(w, resp, fi.path)
+
+    async def _handle_request(self, w, req: Request, resp: Response):
         try:
-            path = self.static + req.path + ("index.html" if req.path.endswith("/") else "")
-
             if handler := self.routes.get((req.method, req.path)):
                 results = await handler(req, resp)
-
-            elif (
-                req.method == "GET"
-                and "gzip" in req.headers.get("Accept-Encoding", "")
-                and (fsize := get_file_size(path + ".gz"))
-            ):
-                resp.add_header("Content-Length", str(fsize))
-                resp.add_header("Content-Encoding", "gzip")
-                await self._respond_file(writer, resp, path + ".gz")
+            elif req.method == "GET" and (fi := self._get_static(req)):
+                await self._handle_static(w, fi, resp)
                 return
-
-            elif req.method == "GET" and (fsize := get_file_size(path)):
-                resp.add_header("Content-Length", str(fsize))
-                await self._respond_file(writer, resp, path)
-                return
-
             else:
-                results = await self._catchall_handler(req, resp)
+                results = await self._cah(req, resp)
 
         except Exception as e:
-            results = await self._error_handler(req, resp, e)
+            print("Error while handling:", repr(e))
+            results = await self._eh(req, resp, e)
 
         if results is not None:
             resp.body = results
 
-        await self._respond(writer, resp)
+        await self._respond(w, resp)
 
-    async def _handle(self, reader, writer):
+    async def _handle(self, r, w):
+        print("Got request from", w.get_extra_info("peername"))
         resp = Response()
 
         try:
-            req = self._parse_request(await reader.read(READ_BUFFER_SIZE))
+            req = await Request.from_stream(r)
+            gc.collect()
 
         except Exception as e:
-            gc.collect()
+            print("Error while parsing:", repr(e))
             resp.status = "400 Bad Request"
             resp.body = "Bad Request"
-            await self._respond(writer, resp)
+            await self._respond(w, resp)
 
         else:
-            gc.collect()
-            await self._handle_request(writer, req, resp)
+            await self._handle_request(w, req, resp)
 
         finally:
-            writer.close()
-            await writer.wait_closed()
+            w.close()
+            await w.wait_closed()
+            gc.collect()
 
-    async def run(self, host: str = "0.0.0.0", port: int = 80):
-        return await uasyncio.start_server(self._handle, host, port)
+    async def run(self):
+        s = await start_server(self._handle, self.host, self.port)
+        await s.wait_closed()

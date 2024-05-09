@@ -126,5 +126,6 @@ dmypy.json
 
 boot.py
 main.py
+wifi.py
 pymakr.conf
 static/
