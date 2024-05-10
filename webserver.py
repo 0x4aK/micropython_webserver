@@ -289,19 +289,19 @@ class WebServer:
     async def _handle_request(self, w, req: Request, resp: Response):
         try:
             if handler := self.routes.get((req.method, req.path)):
-                results = await handler(req, resp)
+                r = await handler(req, resp)
             elif req.method == "GET" and (fi := self._get_static(req)):
                 await self._handle_static(w, fi, resp)
                 return
             else:
-                results = await self._cah(req, resp)
+                r = await self._cah(req, resp)
 
         except Exception as e:
             print("Error while handling:", repr(e))
-            results = await self._eh(req, resp, e)
+            r = await self._eh(req, resp, e)
 
-        if results is not None:
-            resp.body = results
+        if r is not None:
+            resp.body = r
 
         await self._respond(w, resp)
 
