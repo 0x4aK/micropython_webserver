@@ -33,6 +33,18 @@ def _raise(e: Exception):
     raise e
 
 
+def _gc_after(f):
+    async def w(*args):
+        try:
+            await f(*args)
+        except:
+            raise
+        finally:
+            gc.collect()
+
+    return w
+
+
 def _parse_request(raw: str) -> tuple[str, str, str]:
     r = raw.split(" ", 2)
     m, p, v = r if len(r) == 3 else _raise(ValueError("Invalid request line"))
@@ -293,6 +305,7 @@ class WebServer:
 
         await self._respond(w, resp)
 
+    @_gc_after
     async def _handle(self, r, w):
         print("Got request from", w.get_extra_info("peername"))
         resp = Response()
