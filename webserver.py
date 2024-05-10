@@ -184,6 +184,7 @@ class WebServer:
     async def _deh(req: Request, resp: Response, error: BaseException):
         "Default error handler"
         resp.status = "500 Internal Server Error"
+        resp.content_type = "text/plain"
         return f"Error: {str(error)}"
 
     def error_handler(self, handler):
