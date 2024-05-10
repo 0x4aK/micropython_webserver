@@ -15,6 +15,19 @@ _READ_SIZE = micropython.const(256)
 _WRITE_BUFFER_SIZE = micropython.const(128)
 _FILE_INDICATOR = micropython.const(1 << 16)
 
+MIME_TYPES = {
+    "css": "text/css",
+    "png": "image/png",
+    "html": "text/html",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "ico": "image/x-icon",
+    "svg": "image/svg+xml",
+    "json": "application/json",
+    "js": "application/javascript",
+}
+
+
 
 def _raise(e: Exception):
     raise e
@@ -228,21 +241,10 @@ class WebServer:
             await self._write_headers(w, resp)
 
     async def _respond_file(self, w, resp: Response, path: str):
-        mts = {
-            "css": "text/css",
-            "png": "image/png",
-            "html": "text/html",
-            "jpg": "image/jpeg",
-            "jpeg": "image/jpeg",
-            "ico": "image/x-icon",
-            "svg": "image/svg+xml",
-            "json": "application/json",
-            "js": "application/javascript",
-        }
 
         exts = path.rsplit(".", 2)
-        if mt := mts.get(exts[-2] if exts[-1] == "gz" else exts[-1]):
-            resp.content_type = mt
+        if ct := MIME_TYPES.get(exts[-2] if exts[-1] == "gz" else exts[-1]):
+            resp.content_type = ct
 
         await self._write_status(w, resp)
         await self._write_headers(w, resp)
