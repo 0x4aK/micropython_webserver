@@ -1,6 +1,7 @@
+import asyncio
 import gc
 import os
-from asyncio import StreamReader, start_server
+from collections import namedtuple
 
 try:
     import micropython  # type: ignore
@@ -8,6 +9,7 @@ except ImportError:
     from types import SimpleNamespace
 
     micropython = SimpleNamespace(const=lambda i: i)
+
 
 _READ_SIZE = micropython.const(256)
 _WRITE_BUFFER_SIZE = micropython.const(128)
@@ -57,15 +59,11 @@ def _get_file_size(path: str) -> int | None:
     return stat[6]
 
 
-class _FileInfo:
-    def __init__(self, path: str, size: int, encoding: str | None = None) -> None:
-        self.path = path
-        self.size = size
-        self.encoding = encoding
+_FileInfo = namedtuple("_FileInfo", "path,size,encoding")
 
 
 class _Reader:
-    def __init__(self, stream: StreamReader):
+    def __init__(self, stream: asyncio.StreamReader):
         self.b = b""
         self.s = stream
 
@@ -110,8 +108,8 @@ class Response:
     def set_body(self, body: str):
         self.body = body
 
-    def set_content_type(self, content_type: str):
-        self.content_type = content_type
+    def set_content_type(self, ct: str):
+        self.content_type = ct
 
 
 class Request:
@@ -132,7 +130,7 @@ class Request:
         self.qs = qs
 
     @classmethod
-    async def from_stream(cls, stream: StreamReader) -> "Request":
+    async def from_stream(cls, stream: asyncio.StreamReader) -> "Request":
         r = _Reader(stream)
 
         m, rp, v = _parse_request(await r.readuntil(b"\r\n"))
@@ -156,13 +154,14 @@ class WebServer:
         self.static = static_folder
         self._cah = self._dch  # Catch-all handler
         self._eh = self._deh  # Error handler
+        self.s: asyncio.Server | None = None
 
     def route(self, path: str, methods: tuple[str, ...] = ("GET",)):
-        def wrapper(handler):
+        def w(handler):
             self.add_route(path, handler, methods)
             return handler
 
-        return wrapper
+        return w
 
     def add_route(self, path: str, handler, methods: tuple[str, ...] = ("GET",)):
         for method in methods:
@@ -264,7 +263,7 @@ class WebServer:
             return _FileInfo(path + ".gz", fsize, "gzip")
 
         elif fsize := _get_file_size(path):
-            return _FileInfo(path, fsize)
+            return _FileInfo(path, fsize, None)
 
     async def _handle_static(self, w, fi: _FileInfo, resp: Response):
         resp.set_header("content-length", str(fi.size))
@@ -310,9 +309,10 @@ class WebServer:
 
         finally:
             w.close()
-            await w.wait_closed()
-            gc.collect()
+
+    def close(self):
+        return self.s and self.s.close()
 
     async def run(self):
-        s = await start_server(self._handle, self.host, self.port)
-        await s.wait_closed()
+        self.s = await asyncio.start_server(self._handle, self.host, self.port)
+        await self.s.wait_closed()
