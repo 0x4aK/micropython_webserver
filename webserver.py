@@ -4,7 +4,30 @@ import os
 from collections import namedtuple
 
 try:
-    import micropython  # type: ignore
+    from typing import (
+        TYPE_CHECKING,
+        Callable,
+        Coroutine,
+        Iterable,
+        Literal,
+        TypeAlias,
+        TypeGuard,
+    )
+except ImportError:
+    TYPE_CHECKING = False
+
+
+if TYPE_CHECKING:
+    IterStr: TypeAlias = "Iterable[str]"
+    Body: TypeAlias = "bytes|IterStr|None"
+    Results: TypeAlias = "Coroutine[None,None,Body|str]"
+    Handler: TypeAlias = "Callable[[Request,Response],Results]"
+    ErrorHanlder: TypeAlias = "Callable[[Request,Response,Exception],Results]"
+    Methods: TypeAlias = "Iterable[Literal['GET','POST','DELETE','PUT','HEAD','OPTIONS']]"
+    StrDict: TypeAlias = "dict[str,str]"
+
+try:
+    import micropython
 except ImportError:
     from types import SimpleNamespace
 
@@ -26,6 +49,12 @@ MIME_TYPES = {
 }
 
 
+_FileInfo = namedtuple("_FileInfo", "path size encoding")
+
+
+def _iterable(o: object) -> "TypeGuard[IterStr]":
+    return hasattr(o, "__next__") or hasattr(o, "__iter__")
+
 
 def _raise(e: Exception):
     raise e
@@ -44,17 +73,16 @@ def _gc_after(f):
 
 
 def _parse_request(raw: str) -> tuple[str, str, str]:
-    r = raw.split(" ", 2)
-    m, p, v = r if len(r) == 3 else _raise(ValueError("Invalid request line"))
+    m, p, v = r if len(r := raw.split(" ", 2)) == 3 else _raise(ValueError("Invalid request line"))
     return m, p, v
 
 
 def _parse_header(header: str) -> tuple[str, str]:
-    n, _, v = header.partition(": ")
-    return n.lower(), v
+    n, _, v = header.partition(":")
+    return n.lower(), v.strip()
 
 
-def _parse_headers(raw: str) -> dict[str, str]:
+def _parse_headers(raw: str) -> "StrDict":
     return dict(map(_parse_header, raw.split("\r\n")))
 
 
@@ -63,11 +91,11 @@ def _parse_qsv(qkv: str) -> tuple[str, str]:
     return k, v
 
 
-def _parse_qs(raw: str) -> dict[str, str]:
+def _parse_qs(raw: str) -> "StrDict":
     return dict(map(_parse_qsv, raw.split("&")))
 
 
-def _parse_path(raw: str) -> tuple[str, dict[str, str] | None]:
+def _parse_path(raw: str) -> "tuple[str, StrDict | None]":
     p, rqs = raw.split("?", 1) if "?" in raw else (raw, None)
     return p, _parse_qs(rqs) if rqs is not None else None
 
@@ -82,57 +110,45 @@ def _get_file_size(path: str) -> int | None:
     return stat[6]
 
 
-_FileInfo = namedtuple("_FileInfo", "path,size,encoding")
-
-
 class _Reader:
     def __init__(self, stream: asyncio.StreamReader):
         self.b = b""
         self.s = stream
 
     async def readuntil(self, sep=b"\n"):
-        while (i := self.b.find(sep)) < 0 and (d := await self.s.read(_READ_SIZE)):
-            self.b += d
+        b, sr = self.b, self.s.read
+        while (i := b.find(sep)) < 0 and (d := await sr(_READ_SIZE)):
+            b += d
 
-        r, self.b = self.b[:i], self.b[i + len(sep) :]
+        r, self.b = b[:i], b[i + len(sep) :]
         return r.decode()
 
     async def readexactly(self, n: int):
-        while len(self.b) < n and (d := await self.s.read(_READ_SIZE)):
-            self.b += d
+        b, sr = self.b, self.s.read
+        while len(b) < n and (d := await sr(_READ_SIZE)):
+            b += d
 
-        r, self.b = self.b[:n], self.b[n:]
+        r, self.b = b[:n], b[n:]
         return r.decode()
 
 
-class _Body:
-    def __set__(self, i, v: str | None):
-        setattr(i, "_body", v and v.encode())
-
-    def __get__(self, i, objtype=None) -> bytes | None:
-        return getattr(i, "_body", None)
-
-
 class Response:
-    body = _Body()
-
     def __init__(self):
-        self.headers: dict[str, str] = {"connection": "close"}
-        self.content_type = "text/plain"
-        self.body = None
-        self.status = "200 OK"
+        self.headers = {"connection": "close", "content-type": "text/plain"}
+        self.body: "Body" = None
+        self.status = b"200 OK"
 
     def set_header(self, header: str, value: str):
         self.headers[header] = value
 
-    def set_status(self, status: str):
-        self.status = status
+    def set_status(self, status: bytes | str):
+        self.status = status.encode() if isinstance(status, str) else status
 
-    def set_body(self, body: str):
-        self.body = body
+    def set_body(self, body: "Body | str"):
+        self.body = body.encode() if isinstance(body, str) else body
 
     def set_content_type(self, ct: str):
-        self.content_type = ct
+        self.headers["content-type"] = ct
 
 
 class Request:
@@ -141,20 +157,20 @@ class Request:
         method: str,
         path: str,
         version: str,
-        headers: dict[str, str],
-        qs: dict[str, str] | None,
+        headers: "StrDict",
+        qs: "StrDict | None",
         body: str | None,
     ) -> None:
-        self.path = path
         self.method = method
+        self.path = path
         self.version = version
         self.headers = headers
-        self.body = body
         self.qs = qs
+        self.body = body
 
     @classmethod
-    async def from_stream(cls, stream: asyncio.StreamReader) -> "Request":
-        r = _Reader(stream)
+    async def from_stream(cls, s: asyncio.StreamReader) -> "Request":
+        r = _Reader(s)
 
         m, rp, v = _parse_request(await r.readuntil(b"\r\n"))
         p, qs = _parse_path(rp)
@@ -171,125 +187,125 @@ class WebServer:
         port: int = 80,
         static_folder: str = "static",
     ) -> None:
-        self.host = host
-        self.port = port
-        self.routes = {}
+        self.h = host
+        self.p = port
+        self.r: dict[tuple[str, str], Handler] = {}
         self.static = static_folder
-        self._cah = self._dch  # Catch-all handler
-        self._eh = self._deh  # Error handler
+        self._cah: "Handler" = self._dch  # Catch-all handler
+        self._eh: "ErrorHanlder" = self._deh  # Error handler
         self.s: asyncio.Server | None = None
 
-    def route(self, path: str, methods: tuple[str, ...] = ("GET",)):
-        def w(handler):
+    def route(self, path: str, methods: "Methods" = ("GET",)):
+        def w(handler: "Handler"):
             self.add_route(path, handler, methods)
             return handler
 
         return w
 
-    def add_route(self, path: str, handler, methods: tuple[str, ...] = ("GET",)):
+    def add_route(self, path: str, handler: "Handler", methods: "Methods" = ("GET",)):
         for method in methods:
-            self.routes[(method.upper(), path)] = handler
+            self.r[(method.upper(), path)] = handler
 
     @staticmethod
     async def _dch(req: Request, resp: Response):
         "Default catch-all handler"
-        resp.status = "404 Not Found"
+        resp.set_status("404 Not Found")
         return "Not Found"
 
-    def catchall(self, handler):
-        self.set_catchall(handler)
-        return handler
+    def catchall(self, h: "Handler"):
+        self.set_catchall(h)
+        return h
 
-    def set_catchall(self, handler):
-        self._cah = handler
+    def set_catchall(self, h: "Handler"):
+        self._cah = h
 
     @staticmethod
-    async def _deh(req: Request, resp: Response, error: BaseException):
+    async def _deh(req: Request, resp: Response, error: Exception):
         "Default error handler"
-        resp.status = "500 Internal Server Error"
-        resp.content_type = "text/plain"
+        resp.set_status("500 Internal Server Error")
+        resp.set_content_type("text/plain")
         return f"Error: {str(error)}"
 
-    def error_handler(self, handler):
-        self.set_error_handler(handler)
-        return handler
+    def error_handler(self, h: "ErrorHanlder"):
+        self.set_error_handler(h)
+        return h
 
-    def set_error_handler(self, handler):
-        self._eh = handler
+    def set_error_handler(self, h: "ErrorHanlder"):
+        self._eh = h
 
     @staticmethod
-    async def _write_status(w, resp: Response):
-        w.write(f"HTTP/1.1 {resp.status}\r\n".encode())
+    async def _write_status(w, s: bytes):
+        w.write(b"HTTP/1.1 %s\r\n" % s)
         await w.drain()
 
     @staticmethod
-    async def _write_headers(w, resp: Response):
-        w.write(f"content-type: {resp.content_type}\r\n".encode())
-        await w.drain()
-
-        for header, value in resp.headers.items():
-            w.write(f"{header}: {value}\r\n".encode())
-            await w.drain()
-
+    async def _write_headers(w, h: "StrDict"):
+        for v in h.items():
+            w.write(b"%s: %s\r\n" % tuple(map(str.encode, v)))
         w.write(b"\r\n")
         await w.drain()
 
-    @staticmethod
-    async def _write_body(w, resp: Response):
-        w.write(resp.body)
+    async def _respond(self, w, s: bytes, h: "StrDict", b: bytes | None):
+        await self._write_status(w, s)
+
+        if b is None:
+            await self._write_headers(w, h)
+            return
+
+        h["content-length"] = str(len(b))
+        await self._write_headers(w, h)
+        w.write(b)
         await w.drain()
 
-    async def _respond(self, w, resp: Response):
-        await self._write_status(w, resp)
+    async def _respond_file(self, w, s: bytes, h: "StrDict", p: str):
+        ext = (e := p.rsplit(".", 2))[-2 if e[-1] == "gz" else -1]
+        if ct := MIME_TYPES.get(ext):
+            h["content-type"] = ct
 
-        if resp.body is not None:
-            resp.set_header("content-length", str(len(resp.body)))
-            await self._write_headers(w, resp)
-            await self._write_body(w, resp)
+        await self._write_status(w, s)
+        await self._write_headers(w, h)
 
-        else:
-            await self._write_headers(w, resp)
-
-    async def _respond_file(self, w, resp: Response, path: str):
-
-        exts = path.rsplit(".", 2)
-        if ct := MIME_TYPES.get(exts[-2] if exts[-1] == "gz" else exts[-1]):
-            resp.content_type = ct
-
-        await self._write_status(w, resp)
-        await self._write_headers(w, resp)
-
-        wb = bytearray(_WRITE_BUFFER_SIZE)
-        with open(path, "rb") as f:
+        wb, ww, wd = bytearray(_WRITE_BUFFER_SIZE), w.write, w.drain
+        with open(p, "rb") as f:
             while f.readinto(wb):
-                w.write(wb)
-                await w.drain()
+                ww(wb)
+                await wd()
+
+    async def _respond_chunks(self, w, s: bytes, h: "StrDict", i: "IterStr"):
+        h["transfer-encoding"] = "chunked"
+        await self._write_status(w, s)
+        await self._write_headers(w, h)
+
+        ww, wd = w.write, w.drain
+        for d in map(lambda d: d.encode(), i):
+            ww(b"%x\r\n%s\r\n" % (len(d), d))
+            await wd()
+        ww(b"0\r\n\r\n")
+        await wd()
 
     def _get_static(self, req: Request):
         path = "./" + self.static + req.path + ("index.html" if req.path.endswith("/") else "")
 
-        if (
-            (en := req.headers.get("accept-encoding"))
-            and "gzip" in en
-            and (fsize := _get_file_size(path + ".gz"))
+        if "gzip" in req.headers.get("accept-encoding", "") and (
+            fsize := _get_file_size(path + ".gz")
         ):
             return _FileInfo(path + ".gz", fsize, "gzip")
 
         elif fsize := _get_file_size(path):
             return _FileInfo(path, fsize, None)
 
-    async def _handle_static(self, w, fi: _FileInfo, resp: Response):
+    async def _handle_static(self, w, resp: Response, fi: _FileInfo):
         resp.set_header("content-length", str(fi.size))
         if fi.encoding:
             resp.set_header("content-encoding", fi.encoding)
-        await self._respond_file(w, resp, fi.path)
+        await self._respond_file(w, resp.status, resp.headers, fi.path)
 
     async def _handle_request(self, w, req: Request, resp: Response):
         try:
-            if handler := self.routes.get((req.method, req.path)):
+            if handler := self.r.get((req.method, req.path)):
                 r = await handler(req, resp)
             elif req.method == "GET" and (fi := self._get_static(req)):
-                await self._handle_static(w, fi, resp)
+                await self._handle_static(w, resp, fi)
                 return
             else:
                 r = await self._cah(req, resp)
@@ -299,9 +315,14 @@ class WebServer:
             r = await self._eh(req, resp, e)
 
         if r is not None:
-            resp.body = r
+            resp.set_body(r)
 
-        await self._respond(w, resp)
+        if isinstance(resp.body, bytes):
+            await self._respond(w, resp.status, resp.headers, resp.body)
+        elif _iterable(resp.body):
+            await self._respond_chunks(w, resp.status, resp.headers, resp.body)
+        else:
+            await self._respond(w, resp.status, resp.headers, str(resp.body).encode())
 
     @_gc_after
     async def _handle(self, r, w):
@@ -314,9 +335,7 @@ class WebServer:
 
         except Exception as e:
             print("Error while parsing:", repr(e))
-            resp.status = "400 Bad Request"
-            resp.body = "Bad Request"
-            await self._respond(w, resp)
+            await self._respond(w, b"400 Bad Request", resp.headers, b"Bad Request")
 
         else:
             await self._handle_request(w, req, resp)
@@ -328,5 +347,5 @@ class WebServer:
         return self.s and self.s.close()
 
     async def run(self):
-        self.s = await asyncio.start_server(self._handle, self.host, self.port)
+        self.s = await asyncio.start_server(self._handle, self.h, self.p)
         await self.s.wait_closed()
