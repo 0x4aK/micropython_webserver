@@ -10,11 +10,9 @@ except ImportError:
 
     micropython = SimpleNamespace(const=lambda i: i)
 
-
-_READ_SIZE = micropython.const(256)
+_READ_SIZE = micropython.const(128)
 _WRITE_BUFFER_SIZE = micropython.const(128)
 _FILE_INDICATOR = micropython.const(1 << 16)
-
 MIME_TYPES = {
     "css": "text/css",
     "png": "image/png",
