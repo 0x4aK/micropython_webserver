@@ -203,7 +203,7 @@ class WebServer:
     @staticmethod
     async def _dch(req: Request, resp: Response):
         "Default catch-all handler"
-        resp.set_status("404 Not Found")
+        resp.set_status(b"404 Not Found")
         return "Not Found"
 
     def catchall(self, h: "Handler"):
@@ -217,7 +217,7 @@ class WebServer:
     async def _deh(req: Request, resp: Response, e: Exception):
         "Default error handler"
         print("Error while handling:", repr(e))
-        resp.set_status("500 Internal Server Error")
+        resp.set_status(b"500 Internal Server Error")
         resp.set_content_type("text/plain")
         return f"Error: {str(e)}"
 
