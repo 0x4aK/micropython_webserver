@@ -221,11 +221,12 @@ class WebServer:
         self._cah = h
 
     @staticmethod
-    async def _deh(req: Request, resp: Response, error: Exception):
+    async def _deh(req: Request, resp: Response, e: Exception):
         "Default error handler"
+        print("Error while handling:", repr(e))
         resp.set_status("500 Internal Server Error")
         resp.set_content_type("text/plain")
-        return f"Error: {str(error)}"
+        return f"Error: {str(e)}"
 
     def error_handler(self, h: "ErrorHanlder"):
         self.set_error_handler(h)
@@ -312,7 +313,6 @@ class WebServer:
                 r = await self._cah(req, resp)
 
         except Exception as e:
-            print("Error while handling:", repr(e))
             r = await self._eh(req, resp, e)
 
         if r is not None:
