@@ -1,6 +1,6 @@
 [project]
-name = "uWebServer"
-version = "0.1.0"
+name = "uwebserver"
+version = "0.1.2"
 authors = [{ name = "0x4aK" }]
 description = "Simple web server for micropython"
 readme = "README.md"
@@ -25,7 +25,8 @@ requires = ["setuptools >= 69.5.1", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-py-modules = ["uwebserver"]
+packages = ["uwebserver"]
+package-data = { "uwebserver" = ["py.typed"] }
 
 [tool.pyright]
 reportMissingImports = false

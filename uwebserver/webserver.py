@@ -181,8 +181,8 @@ class WebServer:
         port: int = 80,
         static_folder: str = "static",
     ) -> None:
-        self.h = host
-        self.p = port
+        self.host = host
+        self.port = port
         self.r: dict[tuple[str, str], Handler] = {}
         self.static = static_folder
         self._cah: "Handler" = self._dch  # Catch-all handler
@@ -337,5 +337,5 @@ class WebServer:
         return self.s and self.s.close()
 
     async def run(self):
-        self.s = await asyncio.start_server(self._handle, self.h, self.p)
+        self.s = await asyncio.start_server(self._handle, self.host, self.port)
         await self.s.wait_closed()
