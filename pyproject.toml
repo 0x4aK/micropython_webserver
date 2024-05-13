@@ -1,3 +1,35 @@
+[project]
+name = "uWebServer"
+version = "0.1.0"
+authors = [{ name = "0x4aK" }]
+description = "Simple web server for micropython"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: AsyncIO",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+]
+license = { file = "LICENSE" }
+urls = { repository = "https://github.com/0x4aK/uWebServer" }
+
+[project.optional-dependencies]
+dev = ["ruff >= 0.4.4", "pyright >= 1.1.362"]
+
+[build-system]
+requires = ["setuptools >= 69.5.1", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["webserver"]
 
 [tool.pyright]
-reportMissingModuleSource = false
+reportMissingImports = false
+
+[tool.ruff]
+line-length = 100
+lint = { select = ["E", "F", "I", "UP", "SIM"] }
