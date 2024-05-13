@@ -4,15 +4,8 @@ import os
 from collections import namedtuple
 
 try:
-    from typing import (
-        TYPE_CHECKING,
-        Callable,
-        Coroutine,
-        Iterable,
-        Literal,
-        TypeAlias,
-        TypeGuard,
-    )
+    from collections.abc import Callable, Coroutine, Iterable
+    from typing import TYPE_CHECKING, Literal, TypeAlias, TypeGuard
 except ImportError:
     TYPE_CHECKING = False
 
