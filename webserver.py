@@ -18,8 +18,8 @@ except ImportError:
 
 
 if TYPE_CHECKING:
-    IterStr: TypeAlias = "Iterable[str]"
-    Body: TypeAlias = "bytes|IterStr|None"
+    BytesIter: TypeAlias = "Iterable[bytes]"
+    Body: TypeAlias = "bytes|BytesIter|None"
     Results: TypeAlias = "Coroutine[None,None,Body|str]"
     Handler: TypeAlias = "Callable[[Request,Response],Results]"
     ErrorHanlder: TypeAlias = "Callable[[Request,Response,Exception],Results]"
@@ -52,7 +52,7 @@ MIME_TYPES = {
 _FileInfo = namedtuple("_FileInfo", "path size encoding")
 
 
-def _iterable(o: object) -> "TypeGuard[IterStr]":
+def _iterable(o: object) -> "TypeGuard[BytesIter]":
     return hasattr(o, "__next__") or hasattr(o, "__iter__")
 
 
@@ -63,7 +63,7 @@ def _raise(e: Exception):
 def _gc_after(f):
     async def w(*args):
         try:
-            await f(*args)
+            return await f(*args)
         except:
             raise
         finally:
@@ -169,6 +169,7 @@ class Request:
         self.body = body
 
     @classmethod
+    @_gc_after
     async def from_stream(cls, s: asyncio.StreamReader) -> "Request":
         r = _Reader(s)
 
@@ -240,8 +241,8 @@ class WebServer:
 
     @staticmethod
     async def _write_headers(w, h: "StrDict"):
-        for v in h.items():
-            w.write(b"%s: %s\r\n" % tuple(map(str.encode, v)))
+        for v in map(lambda v: tuple(map(str.encode, v)), h.items()):
+            w.write(b"%s: %s\r\n" % v)
         w.write(b"\r\n")
         await w.drain()
 
@@ -271,13 +272,13 @@ class WebServer:
                 ww(wb)
                 await wd()
 
-    async def _respond_chunks(self, w, s: bytes, h: "StrDict", i: "IterStr"):
+    async def _respond_chunks(self, w, s: bytes, h: "StrDict", i: "BytesIter"):
         h["transfer-encoding"] = "chunked"
         await self._write_status(w, s)
         await self._write_headers(w, h)
 
         ww, wd = w.write, w.drain
-        for d in map(lambda d: d.encode(), i):
+        for d in i:
             ww(b"%x\r\n%s\r\n" % (len(d), d))
             await wd()
         ww(b"0\r\n\r\n")
@@ -331,15 +332,11 @@ class WebServer:
 
         try:
             req = await Request.from_stream(r)
-            gc.collect()
-
         except Exception as e:
             print("Error while parsing:", repr(e))
             await self._respond(w, b"400 Bad Request", resp.headers, b"Bad Request")
-
         else:
             await self._handle_request(w, req, resp)
-
         finally:
             w.close()
 
