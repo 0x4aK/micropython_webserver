@@ -180,11 +180,13 @@ class WebServer:
         host: str = "0.0.0.0",
         port: int = 80,
         static_folder: str = "static",
+        request_timeout: float = 5,
     ) -> None:
         self.host = host
         self.port = port
         self.r: dict[tuple[str, str], Handler] = {}
         self.static = static_folder
+        self.timeout = request_timeout
         self._cah: "Handler" = self._dch  # Catch-all handler
         self._eh: "ErrorHanlder" = self._deh  # Error handler
         self.s: asyncio.Server | None = None
@@ -324,9 +326,10 @@ class WebServer:
         resp = Response()
 
         try:
-            req = await Request.from_stream(r)
-        except Exception as e:
-            print("Error while parsing:", repr(e))
+            req = await asyncio.wait_for(Request.from_stream(r), self.timeout)
+        except asyncio.TimeoutError:
+            await self._respond(w, b"408 Request timeout", resp.headers, b"Timeout")
+        except Exception:
             await self._respond(w, b"400 Bad Request", resp.headers, b"Bad Request")
         else:
             await self._handle_request(w, req, resp)
