@@ -16,6 +16,22 @@ class Response(namedtuple("Response", "status headers body")):
         return cls(status, uwebserver._parse_headers(headers_raw.decode()), body)
 
 
+class Connection:
+    def __init__(self, host: str, port: int) -> None:
+        self.host, self.port = host, port
+        self.writer = self.reader = None
+
+    async def __aenter__(self):
+        self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
+        return self.reader, self.writer
+
+    async def __aexit__(self, *args):
+        if not self.writer:
+            return
+        self.writer.close()
+        await self.writer.wait_closed()
+
+
 async def _read_response(reader: asyncio.StreamReader):
     buffer = b""
     try:
@@ -44,13 +60,9 @@ async def _write_data(
 
 
 async def fetch(method: str, path: str, body: bytes | None):
-    try:
-        reader, writer = await asyncio.open_connection(HOST, PORT)
+    async with Connection(HOST, PORT) as (reader, writer):
         await _write_data(writer, method, path, body)
         return await _read_response(reader)
-    finally:
-        writer.close()
-        await writer.wait_closed()
 
 
 class TestDefaultWebServer(unittest.TestCase):
@@ -58,7 +70,7 @@ class TestDefaultWebServer(unittest.TestCase):
         async def error_route(req, resp):
             raise Exception("Test Exception")
 
-        self.app = uwebserver.WebServer(host=HOST, port=PORT)
+        self.app = uwebserver.WebServer(host=HOST, port=PORT, request_timeout=1)
         self.app.add_route("/error", error_route)
 
         self.loop = asyncio.new_event_loop()
@@ -97,14 +109,10 @@ class TestDefaultWebServer(unittest.TestCase):
 
     def test_invalid_request(self):
         async def send_invalid_request():
-            try:
-                reader, writer = await asyncio.open_connection(HOST, PORT)
+            async with Connection(HOST, PORT) as (reader, writer):
                 writer.write(b"INVALID REQUEST\r\n")
                 await writer.drain()
                 return await _read_response(reader)
-            finally:
-                writer.close()
-                await writer.wait_closed()
 
         expected = Response(
             b"HTTP/1.1 400 Bad Request",
@@ -120,14 +128,10 @@ class TestDefaultWebServer(unittest.TestCase):
 
     def test_request_timeout(self):
         async def send_incomplete_request():
-            try:
-                reader, writer = await asyncio.open_connection(HOST, PORT)
+            async with Connection(HOST, PORT) as (reader, writer):
                 writer.write(b"GET")
                 await writer.drain()
                 return await _read_response(reader)
-            finally:
-                writer.close()
-                await writer.wait_closed()
 
         expected = Response(
             b"HTTP/1.1 408 Request timeout",
