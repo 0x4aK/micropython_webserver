@@ -70,7 +70,7 @@ class TestDefaultWebServer(unittest.TestCase):
         async def error_route(req, resp):
             raise Exception("Test Exception")
 
-        self.app = uwebserver.WebServer(host=HOST, port=PORT, request_timeout=1)
+        self.app = uwebserver.WebServer(port=PORT, request_timeout=1)
         self.app.add_route("/error", error_route)
 
         self.loop = asyncio.new_event_loop()
@@ -163,7 +163,7 @@ class TestWebServer(unittest.TestCase):
             resp.set_status(b"500 Internal Server Error")
             return "Error"
 
-        self.app = uwebserver.WebServer(host=HOST, port=PORT)
+        self.app = uwebserver.WebServer(port=PORT)
         self.app.add_route("/simple", simple_route)
         self.app.add_route("/chunk", iter_route)
         self.app.add_route("/error", error_route)
