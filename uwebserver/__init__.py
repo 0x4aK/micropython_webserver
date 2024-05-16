@@ -66,7 +66,7 @@ def _gc_after(f):
 
 
 def _parse_request(raw: str) -> tuple[str, str, str]:
-    m, p, v = r if len(r := raw.split(" ", 2)) == 3 else _raise(ValueError("Invalid request line"))
+    m, p, v = r if len(r := raw.split(" ")) == 3 else _raise(ValueError("Invalid request line"))
     return m, p, v
 
 
