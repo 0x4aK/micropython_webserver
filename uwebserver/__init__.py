@@ -332,6 +332,7 @@ class WebServer:
             await self._handle_request(w, req, resp)
         finally:
             w.close()
+            await w.wait_closed()
 
     def close(self):
         return self.s and self.s.close()
