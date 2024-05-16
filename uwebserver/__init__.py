@@ -340,8 +340,5 @@ class WebServer:
         return self.s and self.s.close()
 
     async def run(self):
-        print("starting web server")
         self.s = await asyncio.start_server(self._handle, self.host, self.port)
-        print("server created")
         await self.s.wait_closed()
-        print("server closed")
