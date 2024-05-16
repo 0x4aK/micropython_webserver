@@ -13,10 +13,10 @@ jobs:
         uses: BrianPugh/install-micropython@v2.1.0
 
       - name: Install unittest
-      - run: micropython -m mip install unittest-discover
+        run: micropython -m mip install unittest-discover
 
       - name: Test MicroPython
-      - run: micropython -m unittest discover -s tests
+        run: micropython -m unittest discover -s tests
 
   cpython:
     runs-on: ubuntu-latest
@@ -33,4 +33,4 @@ jobs:
           python-version: ${{ matrix.python }}
 
       - name: Test CPython
-      - run: python -m unittest discover -s tests -v
+        run: python -m unittest discover -s tests -v
