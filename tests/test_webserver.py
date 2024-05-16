@@ -4,7 +4,7 @@ from collections import namedtuple
 
 import uwebserver
 
-HOST, PORT = "localhost", 8000
+HOST, PORT = "127.0.0.1", 8000
 APP_TIMEOUT, TEST_TIMEOUT = 30, 10
 
 
