@@ -1,0 +1,36 @@
+name: Tests
+
+on: [push]
+
+jobs:
+  micropython:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MicroPython
+        uses: BrianPugh/install-micropython@v2.1.0
+
+      - name: Install unittest
+      - run: micropython -m mip install unittest-discover
+
+      - name: Test MicroPython
+      - run: micropython -m unittest discover -s tests
+
+  cpython:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Test CPython
+      - run: python -m unittest discover -s tests -v
