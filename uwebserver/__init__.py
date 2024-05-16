@@ -322,7 +322,6 @@ class WebServer:
 
     @_gc_after
     async def _handle(self, r, w):
-        print("Got request from", w.get_extra_info("peername"))
         resp = Response()
 
         try:
