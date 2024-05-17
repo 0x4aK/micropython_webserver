@@ -338,7 +338,6 @@ class WebServer:
             await w.wait_closed()
 
     def close(self):
-        print("close called", self.s)
         return self.s and self.s.close()
 
     async def wait_ready(self):

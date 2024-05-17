@@ -20,7 +20,6 @@ jobs:
 
   cpython:
     runs-on: ubuntu-latest
-    container: ubuntu
     strategy:
       matrix:
         python: ["3.10", "3.11", "3.12"]
