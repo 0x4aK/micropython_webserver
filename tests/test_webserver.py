@@ -75,6 +75,7 @@ class TestDefaultWebServer(unittest.TestCase):
 
         self.loop = asyncio.new_event_loop()
         self.app_task = self.loop.create_task(asyncio.wait_for(self.app.run(), APP_TIMEOUT))
+        self.loop.run_until_complete(self.app.wait_ready())
 
     def tearDown(self) -> None:
         self.app.close()
@@ -172,6 +173,7 @@ class TestWebServer(unittest.TestCase):
 
         self.loop = asyncio.new_event_loop()
         self.app_task = self.loop.create_task(asyncio.wait_for(self.app.run(), APP_TIMEOUT))
+        self.loop.run_until_complete(self.app.wait_ready())
 
     def tearDown(self) -> None:
         self.app.close()
