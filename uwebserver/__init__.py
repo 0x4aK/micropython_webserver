@@ -179,7 +179,7 @@ class WebServer:
         *,
         host: str = "0.0.0.0",
         port: int = 80,
-        static_folder: str = "static",
+        static_folder: str | None = "static",
         request_timeout: float = 5,
     ) -> None:
         self.host = host
@@ -281,16 +281,18 @@ class WebServer:
         ww(b"0\r\n\r\n")
         await wd()
 
-    def _get_static(self, req: Request):
-        path = "./" + self.static + req.path + ("index.html" if req.path.endswith("/") else "")
+    def _get_static_info(self, req: Request):
+        if self.static is None:
+            return
 
-        if "gzip" in req.headers.get("accept-encoding", "") and (
-            fsize := _get_file_size(path + ".gz")
-        ):
-            return _FileInfo(path + ".gz", fsize, "gzip")
+        p = "./" + self.static + req.path + ("index.html" if req.path.endswith("/") else "")
+        e = req.headers.get("accept-encoding", "")
 
-        elif fsize := _get_file_size(path):
-            return _FileInfo(path, fsize, None)
+        if "gzip" in e and (fsize := _get_file_size(p + ".gz")):
+            return _FileInfo(p + ".gz", fsize, "gzip")
+
+        elif fsize := _get_file_size(p):
+            return _FileInfo(p, fsize, None)
 
     async def _handle_static(self, w, resp: Response, fi: _FileInfo):
         resp.set_header("content-length", str(fi.size))
@@ -302,7 +304,7 @@ class WebServer:
         try:
             if handler := self.r.get((req.method, req.path)):
                 r = await handler(req, resp)
-            elif req.method == "GET" and (fi := self._get_static(req)):
+            elif req.method == "GET" and (fi := self._get_static_info(req)):
                 await self._handle_static(w, resp, fi)
                 return
             else:
