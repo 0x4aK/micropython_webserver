@@ -190,6 +190,7 @@ class WebServer:
         self._cah: "Handler" = self._dch  # Catch-all handler
         self._eh: "ErrorHanlder" = self._deh  # Error handler
         self.s: asyncio.Server | None = None
+        self._ready = asyncio.Event()
 
     def route(self, path: str, methods: "Methods" = ("GET",)):
         def w(handler: "Handler"):
@@ -337,8 +338,13 @@ class WebServer:
             await w.wait_closed()
 
     def close(self):
+        print("close called", self.s)
         return self.s and self.s.close()
+
+    async def wait_ready(self):
+        await self._ready.wait()
 
     async def run(self):
         self.s = await asyncio.start_server(self._handle, self.host, self.port)
+        self._ready.set()
         await self.s.wait_closed()

@@ -4,7 +4,7 @@ from collections import namedtuple
 
 import uwebserver
 
-HOST, PORT = "localhost", 8000
+HOST, PORT = "127.0.0.1", 8000
 APP_TIMEOUT, TEST_TIMEOUT = 30, 10
 
 
@@ -70,11 +70,12 @@ class TestDefaultWebServer(unittest.TestCase):
         async def error_route(req, resp):
             raise Exception("Test Exception")
 
-        self.app = uwebserver.WebServer(host=HOST, port=PORT, request_timeout=1)
+        self.app = uwebserver.WebServer(port=PORT, request_timeout=1)
         self.app.add_route("/error", error_route)
 
         self.loop = asyncio.new_event_loop()
         self.app_task = self.loop.create_task(asyncio.wait_for(self.app.run(), APP_TIMEOUT))
+        self.loop.run_until_complete(self.app.wait_ready())
 
     def tearDown(self) -> None:
         self.app.close()
@@ -163,7 +164,7 @@ class TestWebServer(unittest.TestCase):
             resp.set_status(b"500 Internal Server Error")
             return "Error"
 
-        self.app = uwebserver.WebServer(host=HOST, port=PORT)
+        self.app = uwebserver.WebServer(port=PORT)
         self.app.add_route("/simple", simple_route)
         self.app.add_route("/chunk", iter_route)
         self.app.add_route("/error", error_route)
@@ -172,6 +173,7 @@ class TestWebServer(unittest.TestCase):
 
         self.loop = asyncio.new_event_loop()
         self.app_task = self.loop.create_task(asyncio.wait_for(self.app.run(), APP_TIMEOUT))
+        self.loop.run_until_complete(self.app.wait_ready())
 
     def tearDown(self) -> None:
         self.app.close()
