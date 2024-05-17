@@ -51,7 +51,7 @@ async def _write_data(
     writer.write(b"Host: localhost\r\nConnection: keep-alive\r\n")
 
     if body:
-        writer.write(b"Content-Length: %s\r\n\r\n" % len(body))
+        writer.write(b"Content-Length: %i\r\n\r\n" % len(body))
         writer.write(body)
     else:
         writer.write(b"\r\n")
@@ -70,8 +70,10 @@ class TestDefaultWebServer(unittest.TestCase):
         async def error_route(req, resp):
             raise Exception("Test Exception")
 
+        # Set up default app with only request timeout modified to speedup tests.
         self.app = uwebserver.WebServer(port=PORT, request_timeout=1)
-        self.app.add_route("/error", error_route)
+        # To mimic decorator behaviour
+        self.app.route("/error")(error_route)
 
         self.loop = asyncio.new_event_loop()
         self.app_task = self.loop.create_task(asyncio.wait_for(self.app.run(), APP_TIMEOUT))
@@ -157,6 +159,9 @@ class TestWebServer(unittest.TestCase):
         async def error_route(req, resp):
             return str(1 / 0)
 
+        async def echo_route(req, resp):
+            return req.body.upper() if req.body else ""
+
         async def catchall_handler(req, resp):
             return "Catch-All"
 
@@ -167,6 +172,7 @@ class TestWebServer(unittest.TestCase):
         self.app = uwebserver.WebServer(port=PORT)
         self.app.add_route("/simple", simple_route)
         self.app.add_route("/chunk", iter_route)
+        self.app.add_route("/echo", echo_route, ("POST",))
         self.app.add_route("/error", error_route)
         self.app.catchall(catchall_handler)
         self.app.error_handler(error_handler)
@@ -193,6 +199,15 @@ class TestWebServer(unittest.TestCase):
 
         self.assertEqual(response, expected)
 
+    def test_post_data(self):
+        body = b"test string"
+
+        response = self.loop.run_until_complete(
+            asyncio.wait_for(fetch("POST", "/echo", body), TEST_TIMEOUT)
+        )
+
+        self.assertEqual(response.body, body.upper())
+
     def test_chunked_route(self):
         expected = Response(
             b"HTTP/1.1 200 OK",
@@ -209,11 +224,7 @@ class TestWebServer(unittest.TestCase):
     def test_catchall_handler(self):
         expected = Response(
             b"HTTP/1.1 200 OK",
-            {
-                "connection": "close",
-                "content-type": "text/plain",
-                "content-length": "9",
-            },
+            {"connection": "close", "content-type": "text/plain", "content-length": "9"},
             b"Catch-All",
         )
 
@@ -226,11 +237,7 @@ class TestWebServer(unittest.TestCase):
     def test_error_handler(self):
         expected = Response(
             b"HTTP/1.1 500 Internal Server Error",
-            {
-                "connection": "close",
-                "content-type": "text/plain",
-                "content-length": "5",
-            },
+            {"connection": "close", "content-type": "text/plain", "content-length": "5"},
             b"Error",
         )
 
