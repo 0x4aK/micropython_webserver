@@ -314,7 +314,7 @@ class WebServer:
         if r is not None:
             resp.set_body(r)
 
-        if isinstance(resp.body, bytes):
+        if isinstance(resp.body, bytes) or resp.body is None:
             await self._respond(w, resp.status, resp.headers, resp.body)
         elif _iterable(resp.body):
             await self._respond_chunks(w, resp.status, resp.headers, resp.body)

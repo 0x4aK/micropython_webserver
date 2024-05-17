@@ -145,6 +145,7 @@ class TestDefaultWebServer(unittest.TestCase):
         response = self.loop.run_until_complete(
             asyncio.wait_for(send_incomplete_request(), TEST_TIMEOUT),
         )
+
         self.assertEqual(response, expected)
 
 
@@ -162,6 +163,9 @@ class TestWebServer(unittest.TestCase):
         async def echo_route(req, resp):
             return req.body.upper() if req.body else ""
 
+        async def no_content_route(req, resp):
+            resp.set_status("204 No Content")
+
         async def catchall_handler(req, resp):
             return "Catch-All"
 
@@ -174,6 +178,7 @@ class TestWebServer(unittest.TestCase):
         self.app.add_route("/chunk", iter_route)
         self.app.add_route("/echo", echo_route, ("POST",))
         self.app.add_route("/error", error_route)
+        self.app.add_route("/nothing", no_content_route)
         self.app.catchall(catchall_handler)
         self.app.error_handler(error_handler)
 
@@ -201,12 +206,24 @@ class TestWebServer(unittest.TestCase):
 
     def test_post_data(self):
         body = b"test string"
-
         response = self.loop.run_until_complete(
             asyncio.wait_for(fetch("POST", "/echo", body), TEST_TIMEOUT)
         )
 
         self.assertEqual(response.body, body.upper())
+
+    def test_no_content(self):
+        expected = Response(
+            b"HTTP/1.1 204 No Content",
+            {"connection": "close", "content-type": "text/plain"},
+            (b""),
+        )
+
+        response = self.loop.run_until_complete(
+            asyncio.wait_for(fetch("GET", "/nothing", None), TEST_TIMEOUT)
+        )
+
+        self.assertEqual(response, expected)
 
     def test_chunked_route(self):
         expected = Response(
