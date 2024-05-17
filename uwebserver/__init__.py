@@ -98,7 +98,7 @@ def _get_file_size(path: str) -> int | None:
         stat = os.stat(path)
     except OSError:
         return None
-    if stat[0] & _FILE_INDICATOR != 0:
+    if stat[0] & _FILE_INDICATOR:
         return None
     return stat[6]
 
@@ -263,10 +263,10 @@ class WebServer:
         await self._write_status(w, s)
         await self._write_headers(w, h)
 
-        wb, ww, wd = bytearray(_WRITE_BUFFER_SIZE), w.write, w.drain
+        wb, ww, wd = memoryview(bytearray(_WRITE_BUFFER_SIZE)), w.write, w.drain
         with open(p, "rb") as f:
-            while f.readinto(wb):
-                ww(wb)
+            while r := f.readinto(wb):
+                ww(wb[:r])
                 await wd()
 
     async def _respond_chunks(self, w, s: bytes, h: "StrDict", i: "BytesIter"):

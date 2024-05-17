@@ -70,9 +70,13 @@ class TestDefaultWebServer(unittest.TestCase):
         async def error_route(req, resp):
             raise Exception("Test Exception")
 
-        # Set up default app with only request timeout modified to speedup tests.
-        self.app = uwebserver.WebServer(port=PORT, request_timeout=1)
-        # To mimic decorator behaviour
+        # Default app with more suitable static folder and
+        # request_timeout modified to speedup tests.
+        self.static_folder = "examples/static"
+        self.app = uwebserver.WebServer(
+            port=PORT, static_folder=self.static_folder, request_timeout=1
+        )
+        # Mimic decorator behaviour
         self.app.route("/error")(error_route)
 
         self.loop = asyncio.new_event_loop()
@@ -109,6 +113,17 @@ class TestDefaultWebServer(unittest.TestCase):
         )
 
         self.assertEqual(response, expected)
+
+    def test_static_file_handling(self):
+        response = self.loop.run_until_complete(
+            asyncio.wait_for(fetch("GET", "/", None), TEST_TIMEOUT),
+        )
+        with open("./" + self.static_folder + "/index.html", "rb") as f:
+            expected = f.read()
+
+        self.assertEqual(len(response.body), len(expected))
+        self.assertEqual(response.headers.get("content-type"), "text/html")
+        self.assertEqual(response.body, expected)
 
     def test_invalid_request(self):
         async def send_invalid_request():
