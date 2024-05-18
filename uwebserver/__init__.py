@@ -1,7 +1,6 @@
 import asyncio
 import gc
 import os
-from collections import namedtuple
 
 try:
     from collections.abc import Callable, Coroutine, Iterable
@@ -11,13 +10,13 @@ except ImportError:
 
 
 if TYPE_CHECKING:
+    StrDict: TypeAlias = "dict[str,str]"
     BytesIter: TypeAlias = "Iterable[bytes]"
-    Body: TypeAlias = "bytes|BytesIter|None"
+    Body: TypeAlias = "bytes|BytesIter|File|None"
     Results: TypeAlias = "Coroutine[None,None,Body|str]"
     Handler: TypeAlias = "Callable[[Request,Response],Results]"
     ErrorHanlder: TypeAlias = "Callable[[Request,Response,Exception],Results]"
     Methods: TypeAlias = "Iterable[Literal['GET','POST','DELETE','PUT','HEAD','OPTIONS']]"
-    StrDict: TypeAlias = "dict[str,str]"
 
 try:
     import micropython
@@ -40,9 +39,6 @@ MIME_TYPES = {
     "json": "application/json",
     "js": "application/javascript",
 }
-
-
-_FileInfo = namedtuple("_FileInfo", "path size encoding")
 
 
 def _iterable(o: object) -> "TypeGuard[BytesIter]":
@@ -125,23 +121,11 @@ class _Reader:
         return r.decode()
 
 
-class Response:
-    def __init__(self):
-        self.headers = {"connection": "close", "content-type": "text/plain"}
-        self.body: "Body" = None
-        self.status = b"200 OK"
-
-    def set_header(self, header: str, value: str):
-        self.headers[header] = value
-
-    def set_status(self, status: bytes | str):
-        self.status = status.encode() if isinstance(status, str) else status
-
-    def set_body(self, body: "Body | str"):
-        self.body = body.encode() if isinstance(body, str) else body
-
-    def set_content_type(self, ct: str):
-        self.headers["content-type"] = ct
+class File:
+    def __init__(self, path: str, size: int | None = None, encoding: str | None = None) -> None:
+        self.s = size or _get_file_size(self.p) or _raise(OSError("Invalid file"))
+        self.e = encoding
+        self.p = path
 
 
 class Request:
@@ -171,6 +155,25 @@ class Request:
         h = _parse_headers(await r.readuntil(b"\r\n\r\n"))
         b = await r.readexactly(int(bl)) if (bl := h.get("content-length")) else None
         return cls(m, p, v, h, qs, b)
+
+
+class Response:
+    def __init__(self):
+        self.headers = {"connection": "close", "content-type": "text/plain"}
+        self.body: "Body" = None
+        self.status = b"200 OK"
+
+    def set_header(self, header: str, value: str):
+        self.headers[header] = value
+
+    def set_status(self, status: bytes | str):
+        self.status = status.encode() if isinstance(status, str) else status
+
+    def set_body(self, body: "Body | str"):
+        self.body = body.encode() if isinstance(body, str) else body
+
+    def set_content_type(self, ct: str):
+        self.headers["content-type"] = ct
 
 
 class WebServer:
@@ -255,8 +258,13 @@ class WebServer:
         w.write(b)
         await w.drain()
 
-    async def _respond_file(self, w, s: bytes, h: "StrDict", p: str):
-        ext = (e := p.rsplit(".", 2))[-2 if e[-1] == "gz" else -1]
+    async def _respond_file(self, w, s: bytes, h: "StrDict", fi: File):
+        h["content-length"] = str(fi.s)
+
+        if fi.e is not None:
+            h["content-encoding"] = fi.e
+
+        ext = (fi.p.rsplit(".", 2))[-2 if fi.e else -1]
         if ct := MIME_TYPES.get(ext):
             h["content-type"] = ct
 
@@ -264,7 +272,7 @@ class WebServer:
         await self._write_headers(w, h)
 
         wb, ww, wd = memoryview(bytearray(_WRITE_BUFFER_SIZE)), w.write, w.drain
-        with open(p, "rb") as f:
+        with open(fi.p, "rb") as f:
             while r := f.readinto(wb):
                 ww(wb[:r])
                 await wd()
@@ -289,24 +297,17 @@ class WebServer:
         e = req.headers.get("accept-encoding", "")
 
         if "gzip" in e and (fsize := _get_file_size(p + ".gz")):
-            return _FileInfo(p + ".gz", fsize, "gzip")
+            return File(p + ".gz", fsize, "gzip")
 
         elif fsize := _get_file_size(p):
-            return _FileInfo(p, fsize, None)
-
-    async def _handle_static(self, w, resp: Response, fi: _FileInfo):
-        resp.set_header("content-length", str(fi.size))
-        if fi.encoding:
-            resp.set_header("content-encoding", fi.encoding)
-        await self._respond_file(w, resp.status, resp.headers, fi.path)
+            return File(p, fsize, None)
 
     async def _handle_request(self, w, req: Request, resp: Response):
         try:
-            if handler := self.r.get((req.method, req.path)):
-                r = await handler(req, resp)
+            if h := self.r.get((req.method, req.path)):
+                r = await h(req, resp)
             elif req.method == "GET" and (fi := self._get_static_info(req)):
-                await self._handle_static(w, resp, fi)
-                return
+                r = fi
             else:
                 r = await self._cah(req, resp)
 
@@ -318,6 +319,8 @@ class WebServer:
 
         if isinstance(resp.body, bytes) or resp.body is None:
             await self._respond(w, resp.status, resp.headers, resp.body)
+        elif isinstance(resp.body, File):
+            await self._respond_file(w, resp.status, resp.headers, resp.body)
         elif _iterable(resp.body):
             await self._respond_chunks(w, resp.status, resp.headers, resp.body)
         else:
