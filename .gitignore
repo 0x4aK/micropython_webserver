@@ -136,5 +136,4 @@ pymakr.conf
 boot.py
 main.py
 wifi.py
-static/
 playground.py

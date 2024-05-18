@@ -48,7 +48,7 @@ async def _write_data(
     body: bytes | None,
 ):
     writer.write(b"%s %s HTTP/1.1\r\n" % tuple(map(str.encode, (method, path))))
-    writer.write(b"Host: localhost\r\nConnection: keep-alive\r\n")
+    writer.write(b"Host: localhost\r\nConnection: keep-alive\r\nAccept-Encoding: gzip, deflate\r\n")
 
     if body:
         writer.write(b"Content-Length: %i\r\n\r\n" % len(body))
@@ -123,6 +123,17 @@ class TestDefaultWebServer(unittest.TestCase):
 
         self.assertEqual(len(response.body), len(expected))
         self.assertEqual(response.headers.get("content-type"), "text/html")
+        self.assertEqual(response.body, expected)
+
+    def test_compressed_static_file_handling(self):
+        response = self.loop.run_until_complete(
+            asyncio.wait_for(fetch("GET", "/favicon.ico", None), TEST_TIMEOUT),
+        )
+        with open("./" + self.static_folder + "/favicon.ico.gz", "rb") as f:
+            expected = f.read()
+
+        self.assertEqual(len(response.body), len(expected))
+        self.assertEqual(response.headers.get("content-encoding"), "gzip")
         self.assertEqual(response.body, expected)
 
     def test_invalid_request(self):
