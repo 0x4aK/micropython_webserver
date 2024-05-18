@@ -123,7 +123,7 @@ class _Reader:
 
 class File:
     def __init__(self, path: str, size: int | None = None, encoding: str | None = None) -> None:
-        self.s = size or _get_file_size(self.p) or _raise(OSError("Invalid file"))
+        self.s = size or _get_file_size(path) or _raise(OSError("Invalid file"))
         self.e = encoding
         self.p = path
 
@@ -193,7 +193,7 @@ class WebServer:
         self._cah: "Handler" = self._dch  # Catch-all handler
         self._eh: "ErrorHanlder" = self._deh  # Error handler
         self.s: asyncio.Server | None = None
-        self._ready = asyncio.Event()
+        self._r = asyncio.Event()
 
     def route(self, path: str, methods: "Methods" = ("GET",)):
         def w(handler: "Handler"):
@@ -213,11 +213,8 @@ class WebServer:
         return "Not Found"
 
     def catchall(self, h: "Handler"):
-        self.set_catchall(h)
-        return h
-
-    def set_catchall(self, h: "Handler"):
         self._cah = h
+        return h
 
     @staticmethod
     async def _deh(req: Request, resp: Response, e: Exception):
@@ -228,11 +225,8 @@ class WebServer:
         return f"Error: {str(e)}"
 
     def error_handler(self, h: "ErrorHanlder"):
-        self.set_error_handler(h)
-        return h
-
-    def set_error_handler(self, h: "ErrorHanlder"):
         self._eh = h
+        return h
 
     @staticmethod
     async def _write_status(w, s: bytes):
@@ -346,9 +340,9 @@ class WebServer:
         return self.s and self.s.close()
 
     async def wait_ready(self):
-        await self._ready.wait()
+        await self._r.wait()
 
     async def run(self):
         self.s = await asyncio.start_server(self._handle, self.host, self.port)
-        self._ready.set()
+        self._r.set()
         await self.s.wait_closed()
