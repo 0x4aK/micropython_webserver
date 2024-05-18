@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     Handler: TypeAlias = "Callable[[Request,Response],Results]"
     ErrorHanlder: TypeAlias = "Callable[[Request,Response,Exception],Results]"
     Methods: TypeAlias = "Iterable[Literal['GET','POST','DELETE','PUT','HEAD','OPTIONS']]"
+    Encodings: TypeAlias = "Literal['gzip']"
 
 try:
     import micropython
@@ -122,10 +123,20 @@ class _Reader:
 
 
 class File:
-    def __init__(self, path: str, size: int | None = None, encoding: str | None = None) -> None:
+    def __init__(
+        self,
+        path: str,
+        size: int | None = None,
+        encoding: "Encodings | None" = None,
+    ) -> None:
         self.s = size or _get_file_size(path) or _raise(OSError("Invalid file"))
         self.e = encoding
         self.p = path
+
+    @classmethod
+    def from_path(cls, path: str, encoding: "Encodings | None" = None):
+        if s := _get_file_size(path):
+            return cls(path, s, encoding)
 
 
 class Request:
@@ -283,24 +294,24 @@ class WebServer:
         ww(b"0\r\n\r\n")
         await wd()
 
-    def _get_static_info(self, req: Request):
+    def _get_static(self, req: Request):
         if self.static is None:
             return
 
         p = "./" + self.static + req.path + ("index.html" if req.path.endswith("/") else "")
-        e = req.headers.get("accept-encoding", "")
 
-        if "gzip" in e and (fsize := _get_file_size(p + ".gz")):
-            return File(p + ".gz", fsize, "gzip")
-
-        elif fsize := _get_file_size(p):
-            return File(p, fsize, None)
+        if (
+            "gzip" in req.headers.get("accept-encoding", "")
+            and (fi := File.from_path(p + ".gz", "gzip"))
+            or (fi := File.from_path(p))
+        ):
+            return fi
 
     async def _handle_request(self, w, req: Request, resp: Response):
         try:
             if h := self.r.get((req.method, req.path)):
                 r = await h(req, resp)
-            elif req.method == "GET" and (fi := self._get_static_info(req)):
+            elif req.method == "GET" and (fi := self._get_static(req)):
                 r = fi
             else:
                 r = await self._cah(req, resp)
