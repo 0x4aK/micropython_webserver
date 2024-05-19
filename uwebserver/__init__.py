@@ -129,9 +129,9 @@ class File:
         size: int | None = None,
         encoding: "Encodings | None" = None,
     ) -> None:
-        self.s = size or _get_file_size(path) or _raise(OSError("Invalid file"))
-        self.e = encoding
-        self.p = path
+        self.size = size or _get_file_size(path) or _raise(OSError("Invalid file"))
+        self.encoding = encoding
+        self.path = path
 
     @classmethod
     def from_path(cls, path: str, encoding: "Encodings | None" = None):
@@ -263,12 +263,12 @@ class WebServer:
         await w.drain()
 
     async def _respond_file(self, w, s: bytes, h: "StrDict", fi: File):
-        h["content-length"] = str(fi.s)
+        h["content-length"] = str(fi.size)
 
-        if fi.e is not None:
-            h["content-encoding"] = fi.e
+        if fi.encoding is not None:
+            h["content-encoding"] = fi.encoding
 
-        ext = (fi.p.rsplit(".", 2))[-2 if fi.e else -1]
+        ext = (fi.path.rsplit(".", 2))[-2 if fi.encoding else -1]
         if ct := MIME_TYPES.get(ext):
             h["content-type"] = ct
 
@@ -276,7 +276,7 @@ class WebServer:
         await self._write_headers(w, h)
 
         wb, ww, wd = memoryview(bytearray(_WRITE_BUFFER_SIZE)), w.write, w.drain
-        with open(fi.p, "rb") as f:
+        with open(fi.path, "rb") as f:
             while r := f.readinto(wb):
                 ww(wb[:r])
                 await wd()
