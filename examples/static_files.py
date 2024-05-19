@@ -10,7 +10,6 @@ If the clients browser supports GZip encoding, that file will be sent.
 
 import asyncio
 
-# Importing Request and Response optional, used for typehinting
 from uwebserver import WebServer
 
 app = WebServer()
