@@ -146,26 +146,25 @@ class Request:
         path: str,
         version: str,
         headers: "StrDict",
-        qs: "StrDict | None",
+        query: "StrDict | None",
         body: str | None,
     ) -> None:
         self.method = method
         self.path = path
         self.version = version
         self.headers = headers
-        self.qs = qs
+        self.query = query
         self.body = body
 
     @classmethod
     @_gc_after
     async def from_stream(cls, s: asyncio.StreamReader) -> "Request":
         r = _Reader(s)
-
         m, rp, v = _parse_request(await r.readuntil(b"\r\n"))
-        p, qs = _parse_path(rp)
+        p, q = _parse_path(rp)
         h = _parse_headers(await r.readuntil(b"\r\n\r\n"))
         b = await r.readexactly(int(bl)) if (bl := h.get("content-length")) else None
-        return cls(m, p, v, h, qs, b)
+        return cls(m, p, v, h, q, b)
 
 
 class Response:
@@ -198,13 +197,13 @@ class WebServer:
     ) -> None:
         self.host = host
         self.port = port
-        self.r: dict[tuple[str, str], Handler] = {}
         self.static = static_folder
         self.timeout = request_timeout
+        self._r: dict[tuple[str, str], Handler] = {}
         self._cah: "Handler" = self._dch  # Catch-all handler
         self._eh: "ErrorHanlder" = self._deh  # Error handler
-        self.s: asyncio.Server | None = None
-        self._r = asyncio.Event()
+        self._s: asyncio.Server | None = None
+        self._re = asyncio.Event()
 
     def route(self, path: str, methods: "Methods" = ("GET",)):
         def w(handler: "Handler"):
@@ -215,7 +214,7 @@ class WebServer:
 
     def add_route(self, path: str, handler: "Handler", methods: "Methods" = ("GET",)):
         for method in methods:
-            self.r[(method.upper(), path)] = handler
+            self._r[(method.upper(), path)] = handler
 
     @staticmethod
     async def _dch(req: Request, resp: Response):
@@ -299,7 +298,6 @@ class WebServer:
             return
 
         p = "./" + self.static + req.path + ("index.html" if req.path.endswith("/") else "")
-
         if (
             "gzip" in req.headers.get("accept-encoding", "")
             and (fi := File.from_path(p + ".gz", "gzip"))
@@ -309,7 +307,7 @@ class WebServer:
 
     async def _handle_request(self, w, req: Request, resp: Response):
         try:
-            if h := self.r.get((req.method, req.path)):
+            if h := self._r.get((req.method, req.path)):
                 r = await h(req, resp)
             elif req.method == "GET" and (fi := self._get_static(req)):
                 r = fi
@@ -348,12 +346,12 @@ class WebServer:
             await w.wait_closed()
 
     def close(self):
-        return self.s and self.s.close()
+        return self._s and self._s.close()
 
     async def wait_ready(self):
-        await self._r.wait()
+        await self._re.wait()
 
     async def run(self):
-        self.s = await asyncio.start_server(self._handle, self.host, self.port)
-        self._r.set()
-        await self.s.wait_closed()
+        self._s = await asyncio.start_server(self._handle, self.host, self.port)
+        self._re.set()
+        await self._s.wait_closed()
