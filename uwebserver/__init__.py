@@ -36,6 +36,8 @@ _READ_SIZE = micropython.const(128)
 _WRITE_BUFFER_SIZE = micropython.const(128)
 _FILE_INDICATOR = micropython.const(1 << 16)
 
+_WRITE_BUFFER = bytearray(_WRITE_BUFFER_SIZE)
+
 MIME_TYPES = {
     "css": "text/css",
     "png": "image/png",
@@ -294,7 +296,7 @@ class WebServer:
         await self._write_status(w, s)
         await self._write_headers(w, h)
 
-        wb, ww, wd = memoryview(bytearray(_WRITE_BUFFER_SIZE)), w.write, w.drain
+        wb, ww, wd = memoryview(_WRITE_BUFFER), w.write, w.drain
         with open(fi.path, "rb") as f:
             while r := f.readinto(wb):
                 ww(wb[:r])
