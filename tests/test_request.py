@@ -27,7 +27,6 @@ class TestRequest(unittest.TestCase):
                 {
                     "method": "GET",
                     "path": "/",
-                    "version": "HTTP/1.1",
                     "headers": {"host": "developer.mozilla.org", "accept-language": "en"},
                     "query": None,
                     "body": None,
@@ -46,7 +45,6 @@ class TestRequest(unittest.TestCase):
                 {
                     "method": "POST",
                     "path": "/contact_form.php",
-                    "version": "HTTP/1.1",
                     "headers": {
                         "host": "developer.mozilla.org",
                         "content-length": "64",
@@ -68,7 +66,6 @@ class TestRequest(unittest.TestCase):
                 {
                     "method": "GET",
                     "path": "/test/demo_form.php",
-                    "version": "HTTP/1.1",
                     "headers": {
                         "host": "developer.mozilla.org",
                         "accept-encoding": "gzip, deflate",

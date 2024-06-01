@@ -8,22 +8,22 @@ class TestParsers(unittest.TestCase):
         cases = (
             (
                 "POST / HTTP/1.1",
-                ("POST", "/", "HTTP/1.1"),
+                ("POST", "/"),
                 "Request POST",
             ),
             (
                 "GET /background.png HTTP/1.0",
-                ("GET", "/background.png", "HTTP/1.0"),
+                ("GET", "/background.png"),
                 "Request GET",
             ),
             (
                 "HEAD /test.html?query=alibaba HTTP/1.1",
-                ("HEAD", "/test.html?query=alibaba", "HTTP/1.1"),
+                ("HEAD", "/test.html?query=alibaba"),
                 "Request HEAD",
             ),
             (
                 "OPTIONS /anypage.html HTTP/1.0",
-                ("OPTIONS", "/anypage.html", "HTTP/1.0"),
+                ("OPTIONS", "/anypage.html"),
                 "Request OPTIONS",
             ),
         )

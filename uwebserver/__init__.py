@@ -35,6 +35,7 @@ except AttributeError:
 _READ_SIZE = micropython.const(128)
 _WRITE_BUFFER_SIZE = micropython.const(128)
 _FILE_INDICATOR = micropython.const(1 << 16)
+
 MIME_TYPES = {
     "css": "text/css",
     "png": "image/png",
@@ -56,6 +57,14 @@ def _raise(e: Exception):
     raise e
 
 
+def _split(b: str, sep: str, max: int | None = None):
+    s = i = n = 0
+    while (n < max if max is not None else True) and (i := b.find(sep, s)) > 0:
+        yield b[s:i]
+        s, n = i + len(sep), n + 1
+    yield b[s:]
+
+
 async def _run(f, args: tuple):
     return await r if iscoroutine(r := f(*args)) else r
 
@@ -72,31 +81,31 @@ def _gc_after(f):
     return w
 
 
-def _parse_request(raw: str) -> tuple[str, str, str]:
-    m, p, v = r if len(r := raw.split(" ")) == 3 else _raise(ValueError("Invalid request line"))
-    return m, p, v
+def _parse_request(raw: str) -> tuple[str, str]:
+    m, p, _ = r if len(r := tuple(_split(raw, " "))) == 3 else _raise(ValueError("Invalid request"))
+    return m, p
 
 
 def _parse_header(header: str) -> tuple[str, str]:
-    n, _, v = header.partition(":")
+    n, v = _split(header, ":", 1)
     return n.lower(), v.strip()
 
 
 def _parse_headers(raw: str) -> "StrDict":
-    return dict(map(_parse_header, raw.split("\r\n")))
+    return dict(map(_parse_header, _split(raw, "\r\n")))
 
 
 def _parse_qsv(qkv: str) -> tuple[str, str]:
-    k, _, v = qkv.partition("=")
+    k, v = _split(qkv, "=", 1)
     return k, v
 
 
 def _parse_qs(raw: str) -> "StrDict":
-    return dict(map(_parse_qsv, raw.split("&")))
+    return dict(map(_parse_qsv, _split(raw, "&")))
 
 
 def _parse_path(raw: str) -> "tuple[str, StrDict | None]":
-    p, rqs = raw.split("?", 1) if "?" in raw else (raw, None)
+    p, rqs = _split(raw, "?", 1) if "?" in raw else (raw, None)
     return p, _parse_qs(rqs) if rqs is not None else None
 
 
@@ -119,6 +128,7 @@ class _Reader:
         b, sr = self.b, self.s.read
         while (i := b.find(sep)) < 0 and (d := await sr(_READ_SIZE)):
             b += d
+            gc.collect()
 
         r, self.b = b[:i], b[i + len(sep) :]
         return r.decode()
@@ -127,6 +137,7 @@ class _Reader:
         b, sr = self.b, self.s.read
         while len(b) < n and (d := await sr(_READ_SIZE)):
             b += d
+            gc.collect()
 
         r, self.b = b[:n], b[n:]
         return r.decode()
@@ -154,14 +165,12 @@ class Request:
         self,
         method: str,
         path: str,
-        version: str,
         headers: "StrDict",
         query: "StrDict | None",
         body: str | None,
     ) -> None:
         self.method = method
         self.path = path
-        self.version = version
         self.headers = headers
         self.query = query
         self.body = body
@@ -170,11 +179,11 @@ class Request:
     @_gc_after
     async def from_stream(cls, s: asyncio.StreamReader) -> "Request":
         r = _Reader(s)
-        m, rp, v = _parse_request(await r.readuntil(b"\r\n"))
+        m, rp = _parse_request(await r.readuntil(b"\r\n"))
         p, q = _parse_path(rp)
         h = _parse_headers(await r.readuntil(b"\r\n\r\n"))
         b = await r.readexactly(int(bl)) if (bl := h.get("content-length")) else None
-        return cls(m, p, v, h, q, b)
+        return cls(m, p, h, q, b)
 
 
 class Response:
