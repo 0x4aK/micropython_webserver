@@ -177,25 +177,29 @@ class TestDefaultWebServer(unittest.TestCase):
 
 class TestWebServer(unittest.TestCase):
     def setUp(self) -> None:
-        async def simple_route(req, resp):
+        def simple_route(req, resp):
             return "Hello"
 
-        async def iter_route(req, resp):
+        def iter_route(req, resp):
             return map(str.encode, "bytes iter test".split())
 
-        async def error_route(req, resp):
+        def error_route(req, resp):
             return str(1 / 0)
 
-        async def echo_route(req, resp):
+        def echo_route(req, resp):
             return req.body.upper() if req.body else ""
 
-        async def no_content_route(req, resp):
+        def no_content_route(req, resp):
             resp.set_status("204 No Content")
 
-        async def catchall_handler(req, resp):
+        def catchall_handler(req, resp):
             return "Catch-All"
 
-        async def error_handler(req, resp, error):
+        async def async_route(req, resp):
+            await asyncio.sleep(0)
+            return "Awaited"
+
+        def error_handler(req, resp, error):
             resp.set_status(b"500 Internal Server Error")
             return "Error"
 
@@ -203,8 +207,9 @@ class TestWebServer(unittest.TestCase):
         self.app.add_route("/simple", simple_route)
         self.app.add_route("/chunk", iter_route)
         self.app.add_route("/echo", echo_route, ("POST",))
-        self.app.add_route("/error", error_route)
         self.app.add_route("/nothing", no_content_route)
+        self.app.add_route("/async", async_route)
+        self.app.add_route("/error", error_route)
         self.app.catchall(catchall_handler)
         self.app.error_handler(error_handler)
 
@@ -247,6 +252,19 @@ class TestWebServer(unittest.TestCase):
 
         response = self.loop.run_until_complete(
             asyncio.wait_for(fetch("GET", "/nothing", None), TEST_TIMEOUT)
+        )
+
+        self.assertEqual(response, expected)
+
+    def test_async(self):
+        expected = Response(
+            b"HTTP/1.1 200 OK",
+            {"connection": "close", "content-type": "text/plain", "content-length": "7"},
+            (b"Awaited"),
+        )
+
+        response = self.loop.run_until_complete(
+            asyncio.wait_for(fetch("GET", "/async", None), TEST_TIMEOUT)
         )
 
         self.assertEqual(response, expected)

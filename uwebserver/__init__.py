@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     StrDict: TypeAlias = "dict[str,str]"
     BytesIter: TypeAlias = "Iterable[bytes]"
     Body: TypeAlias = "bytes|BytesIter|File|None"
-    Results: TypeAlias = "Coroutine[None,None,Body|str]"
+    Results: TypeAlias = "Body|str|Coroutine[None,None,Body|str]"
     Handler: TypeAlias = "Callable[[Request,Response],Results]"
     ErrorHanlder: TypeAlias = "Callable[[Request,Response,Exception],Results]"
     Methods: TypeAlias = "Iterable[Literal['GET','POST','DELETE','PUT','HEAD','OPTIONS']]"
@@ -25,6 +25,12 @@ except ImportError:
     from types import SimpleNamespace
 
     micropython = SimpleNamespace(const=lambda i: i)
+
+
+try:
+    from asyncio import iscoroutine
+except AttributeError:
+    iscoroutine = lambda f: hasattr(f, "__next__")
 
 _READ_SIZE = micropython.const(128)
 _WRITE_BUFFER_SIZE = micropython.const(128)
@@ -50,10 +56,14 @@ def _raise(e: Exception):
     raise e
 
 
+async def _run(f, args: tuple):
+    return await r if iscoroutine(r := f(*args)) else r
+
+
 def _gc_after(f):
     async def w(*args):
         try:
-            return await f(*args)
+            return await _run(f, args)
         except:
             raise
         finally:
@@ -311,14 +321,14 @@ class WebServer:
     async def _handle_request(self, w, req: Request, resp: Response):
         try:
             if h := self._r.get((req.method, req.path)):
-                r = await h(req, resp)
+                r = await _run(h, (req, resp))
             elif req.method == "GET" and (fi := self._get_static(req)):
                 r = fi
             else:
-                r = await self._cah(req, resp)
+                r = await _run(self._cah, (req, resp))
 
         except Exception as e:
-            r = await self._eh(req, resp, e)
+            r = await _run(self._eh, (req, resp, e))
 
         if r is not None:
             resp.set_body(r)
