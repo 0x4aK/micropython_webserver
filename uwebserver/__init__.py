@@ -297,7 +297,10 @@ class WebServer:
         if self.static is None:
             return
 
-        p = "./" + self.static + req.path + ("index.html" if req.path.endswith("/") else "")
+        p = "./{}{}{}".format(
+            self.static, req.path, ("index.html" if req.path.endswith("/") else "")
+        )
+
         if (
             "gzip" in req.headers.get("accept-encoding", "")
             and (fi := File.from_path(p + ".gz", "gzip"))
