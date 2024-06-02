@@ -45,10 +45,10 @@ MIME_TYPES = (
 )
 
 
-def get_mime(ext: str) -> str | None:
-    for e in MIME_TYPES:
-        if e[0] == ext:
-            return e[1]
+def get_mime(ext: str):
+    for e, c in MIME_TYPES:
+        if e == ext:
+            return c
 
 
 def _iterable(o: object) -> "TypeGuard[BytesIter]":
