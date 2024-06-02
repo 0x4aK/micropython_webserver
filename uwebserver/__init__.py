@@ -351,6 +351,8 @@ class WebServer:
             req = await asyncio.wait_for(Request.from_stream(r), self.timeout)
         except asyncio.TimeoutError:
             await self._respond(w, b"408 Request timeout", resp.headers, b"Timeout")
+        except MemoryError:
+            await self._respond(w, b"413 Payload Too Large", resp.headers, b"Request too large")
         except Exception:
             await self._respond(w, b"400 Bad Request", resp.headers, b"Bad Request")
         else:
