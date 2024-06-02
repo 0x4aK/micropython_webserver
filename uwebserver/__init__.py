@@ -29,6 +29,7 @@ except ImportError:
 _READ_SIZE = micropython.const(128)
 _WRITE_BUFFER_SIZE = micropython.const(128)
 _FILE_INDICATOR = micropython.const(1 << 16)
+_INVALID_STATE = micropython.const(Exception("Invalid state"))
 
 _WRITE_BUFFER = bytearray(_WRITE_BUFFER_SIZE)
 
@@ -55,7 +56,7 @@ def _iterable(o) -> "TypeGuard[BytesIter]":
     return hasattr(o, "__next__") or hasattr(o, "__iter__")
 
 
-def _raise(e: Exception):
+def _raise(e: BaseException):
     raise e
 
 
@@ -115,6 +116,38 @@ def _get_file_size(path: str) -> int | None:
     if s[0] & _FILE_INDICATOR:
         return None
     return s[6]
+
+
+class _Future:
+    _o = object()
+
+    def __init__(self) -> None:
+        self._e = asyncio.Event()
+        self._r = self._o
+        self._er = None
+
+    def set_result(self, result):
+        self._r = result if self._r is self._o else _raise(_INVALID_STATE)
+        self._e.set()
+
+    def set_exception(self, exception: BaseException):
+        self._er = exception if self._r is self._o else _raise(_INVALID_STATE)
+        self._e.set()
+
+    def result(self):
+        if self._er is not None:
+            raise self._er
+        if self._r is self._o:
+            raise _INVALID_STATE
+        return self._r
+
+    def __await__(self):
+        yield from self._e.wait().__await__()
+        return self.result()
+
+    def __iter__(self):
+        yield getattr(self._e.wait(), "__next__")()
+        return self.result()
 
 
 class _Reader:
@@ -211,15 +244,15 @@ class WebServer:
         static_folder: str | None = "static",
         request_timeout: float = 5,
     ) -> None:
-        self.host = host
-        self.port = port
         self.static = static_folder
         self.timeout = request_timeout
+        self._h = host
+        self._p = port
         self._r: dict[tuple[str, str], Handler] = {}
         self._cah: "Handler" = self._dch  # Catch-all handler
         self._eh: "ErrorHanlder" = self._deh  # Error handler
         self._s: asyncio.Server | None = None
-        self._re = asyncio.Event()
+        self._re = _Future()
 
     def route(self, path: str, methods: "Methods" = ("GET",)):
         def w(handler: "Handler"):
@@ -369,9 +402,13 @@ class WebServer:
         return self._s and self._s.close()
 
     async def wait_ready(self):
-        await self._re.wait()
+        await self._re
 
     async def run(self):
-        self._s = await asyncio.start_server(self._handle, self.host, self.port)
-        self._re.set()
-        await self._s.wait_closed()
+        try:
+            self._s = await asyncio.start_server(self._handle, self._h, self._p)
+        except Exception as e:
+            self._re.set_exception(e)
+        else:
+            self._re.set_result(None)
+            await self._s.wait_closed()
