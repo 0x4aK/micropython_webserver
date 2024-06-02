@@ -118,6 +118,17 @@ def _get_file_size(path: str) -> int | None:
     return s[6]
 
 
+class suppress:
+    def __init__(self, *exception: type[Exception]) -> None:
+        self._e = exception
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, e, *_):
+        return None if e is None else issubclass(e, self._e)
+
+
 class _Future:
     _o = object()
 
@@ -146,7 +157,8 @@ class _Future:
         return self.result()
 
     def __iter__(self):
-        yield getattr(self._e.wait(), "__next__")()
+        with suppress(StopIteration):
+            yield getattr(self._e.wait(), "__next__")()
         return self.result()
 
 
