@@ -32,17 +32,23 @@ _FILE_INDICATOR = micropython.const(1 << 16)
 
 _WRITE_BUFFER = bytearray(_WRITE_BUFFER_SIZE)
 
-MIME_TYPES = {
-    "css": "text/css",
-    "png": "image/png",
-    "html": "text/html",
-    "jpg": "image/jpeg",
-    "jpeg": "image/jpeg",
-    "ico": "image/x-icon",
-    "svg": "image/svg+xml",
-    "json": "application/json",
-    "js": "application/javascript",
-}
+MIME_TYPES = (
+    ("css", "text/css"),
+    ("png", "image/png"),
+    ("html", "text/html"),
+    ("jpg", "image/jpeg"),
+    ("jpeg", "image/jpeg"),
+    ("ico", "image/x-icon"),
+    ("svg", "image/svg+xml"),
+    ("json", "application/json"),
+    ("js", "application/javascript"),
+)
+
+
+def get_mime(ext: str) -> str | None:
+    for e in MIME_TYPES:
+        if e[0] == ext:
+            return e[1]
 
 
 def _iterable(o: object) -> "TypeGuard[BytesIter]":
@@ -279,8 +285,7 @@ class WebServer:
         if fi.encoding is not None:
             h["content-encoding"] = fi.encoding
 
-        ext = (fi.path.rsplit(".", 2))[-2 if fi.encoding else -1]
-        if ct := MIME_TYPES.get(ext):
+        if ct := get_mime((fi.path.rsplit(".", 2))[-2 if fi.encoding else -1]):
             h["content-type"] = ct
 
         await self._write_status(w, s)
