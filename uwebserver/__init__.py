@@ -410,17 +410,24 @@ class WebServer:
             w.close()
             await w.wait_closed()
 
-    def close(self):
-        return self._s and self._s.close()
-
-    async def wait_ready(self):
-        await self._re
-
-    async def run(self):
+    async def start(self):
         try:
             self._s = await asyncio.start_server(self._handle, self._h, self._p)
         except Exception as e:
             self._re.set_exception(e)
         else:
             self._re.set_result(None)
-            await self._s.wait_closed()
+
+    def close(self):
+        return self._s and self._s.close()
+
+    async def wait_ready(self):
+        await self._re
+
+    async def wait_closed(self):
+        return self._s and await self._s.wait_closed()
+
+    async def run(self):
+        await self.start()
+        await self.wait_ready()
+        await self.wait_closed()
