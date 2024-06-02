@@ -51,7 +51,7 @@ def get_mime(ext: str):
             return c
 
 
-def _iterable(o: object) -> "TypeGuard[BytesIter]":
+def _iterable(o) -> "TypeGuard[BytesIter]":
     return hasattr(o, "__next__") or hasattr(o, "__iter__")
 
 
@@ -84,8 +84,8 @@ def _parse_request(raw: str) -> tuple[str, str]:
     return m, p
 
 
-def _parse_header(header: str) -> tuple[str, str]:
-    n, v = _split(header, ":", 1)
+def _parse_header(raw: str) -> tuple[str, str]:
+    n, v = _split(raw, ":", 1)
     return n.lower(), v.strip()
 
 
@@ -109,20 +109,19 @@ def _parse_path(raw: str) -> "tuple[str, StrDict | None]":
 
 def _get_file_size(path: str) -> int | None:
     try:
-        stat = os.stat(path)
+        s = os.stat(path)
     except OSError:
         return None
-    if stat[0] & _FILE_INDICATOR:
+    if s[0] & _FILE_INDICATOR:
         return None
-    return stat[6]
+    return s[6]
 
 
 class _Reader:
     def __init__(self, stream: asyncio.StreamReader):
-        self.b = b""
-        self.s = stream
+        self.b, self.s = b"", stream
 
-    async def readuntil(self, sep=b"\n"):
+    async def readuntil(self, sep: bytes):
         b, sr = self.b, self.s.read
         while (i := b.find(sep)) < 0 and (d := await sr(_READ_SIZE)):
             b += d
