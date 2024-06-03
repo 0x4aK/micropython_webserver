@@ -80,6 +80,11 @@ class TestParsers(unittest.TestCase):
                 ("/path/to/page", dict(name="ferret", color="purple", style="class")),
                 "Path with multiple query values",
             ),
+            (
+                "/test?empty=&test=1&another=",
+                ("/test", dict(empty="", test="1", another="")),
+                "Path with query value that is empty",
+            ),
         )
 
         for case, result, msg in cases:

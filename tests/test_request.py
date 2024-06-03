@@ -53,7 +53,7 @@ class TestRequest(unittest.TestCase):
                     "query": None,
                     "body": '{"test":123,"other":"test"}',
                 },
-                "From stream Post request with body",
+                "From stream POST request with body",
             ),
             (
                 (
@@ -74,7 +74,7 @@ class TestRequest(unittest.TestCase):
                     "query": {"name1": "value1", "name2": "value2"},
                     "body": None,
                 },
-                "From stream Post request with query string",
+                "From stream GET request with query string",
             ),
         )
 
