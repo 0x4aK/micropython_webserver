@@ -12,12 +12,12 @@ app = WebServer()
 
 
 @app.route("/")
-async def hello(req: Request, resp: Response):
+def hello(req: Request, resp: Response):
     return "Hello world!"
 
 
 @app.catchall
-async def redirect_index(req: Request, resp: Response):
+def redirect_index(req: Request, resp: Response):
     resp.set_status("303 See Other")
     resp.set_header("location", "/")
     return "Redirected"
