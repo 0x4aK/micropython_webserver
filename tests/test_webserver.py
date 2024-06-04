@@ -253,6 +253,17 @@ class TestWebServer(unittest.TestCase):
 
         self.assertEqual(response, expected)
 
+    def test_async_handler(self):
+        expected = Response(
+            b"HTTP/1.1 200 OK",
+            {"connection": "close", "content-type": "text/plain", "content-length": "12"},
+            b"Asynchronous",
+        )
+
+        response = self.loop.run_until_complete(timeout(fetch("GET", "/async", None)))
+
+        self.assertEqual(response, expected)
+
     def test_catchall_handler(self):
         expected = Response(
             b"HTTP/1.1 200 OK",
