@@ -3,7 +3,17 @@ import gc
 import os
 
 try:
-    from collections.abc import Callable, Coroutine, Iterable
+    import micropython
+except ImportError:
+    from types import SimpleNamespace
+
+    micropython = SimpleNamespace(const=lambda i: i)
+
+_is_coro = getattr(asyncio, "iscoroutinefunction", lambda f: type(f).__name__ == "generator")
+
+
+try:
+    from collections.abc import Awaitable, Callable, Iterable
     from typing import TYPE_CHECKING, Literal, TypeAlias, TypeGuard
 except ImportError:
     TYPE_CHECKING = False
@@ -13,18 +23,11 @@ if TYPE_CHECKING:
     StrDict: TypeAlias = "dict[str,str]"
     BytesIter: TypeAlias = "Iterable[bytes]"
     Body: TypeAlias = "bytes|BytesIter|File|None"
-    Results: TypeAlias = "Coroutine[None,None,Body|str]"
-    Handler: TypeAlias = "Callable[[Request,Response],Results]"
-    ErrorHanlder: TypeAlias = "Callable[[Request,Response,Exception],Results]"
+    Results: TypeAlias = "Body|str"
+    Handler: TypeAlias = "Callable[[Request,Response],Results|Awaitable[Results]]"
+    ErrorHandler: TypeAlias = "Callable[[Request,Response,Exception],Results|Awaitable[Results]]"
     Methods: TypeAlias = "Iterable[Literal['GET','POST','DELETE','PUT','HEAD','OPTIONS']]"
     Encodings: TypeAlias = "Literal['gzip']"
-
-try:
-    import micropython
-except ImportError:
-    from types import SimpleNamespace
-
-    micropython = SimpleNamespace(const=lambda i: i)
 
 _READ_SIZE = micropython.const(128)
 _WRITE_BUFFER_SIZE = micropython.const(128)
@@ -52,12 +55,16 @@ def get_mime(ext: str):
             return c
 
 
+def _raise(e: BaseException):
+    raise e
+
+
 def _iterable(o) -> "TypeGuard[BytesIter]":
     return hasattr(o, "__next__") or hasattr(o, "__iter__")
 
 
-def _raise(e: BaseException):
-    raise e
+async def _run(h, args: tuple) -> "Results":
+    return await h(*args) if _is_coro(h) else h(*args)
 
 
 def _split(b: str, sep: str, max: int | None = None):
@@ -250,9 +257,9 @@ class WebServer:
         self.timeout = request_timeout
         self._h = host
         self._p = port
-        self._r: dict[tuple[str, str], Handler] = {}
+        self._r: "dict[tuple[str, str], Handler]" = {}
         self._cah: "Handler" = self._dch  # Catch-all handler
-        self._eh: "ErrorHanlder" = self._deh  # Error handler
+        self._eh: "ErrorHandler" = self._deh  # Error handler
         self._s: asyncio.Server | None = None
         self._re = _Future()
 
@@ -268,7 +275,7 @@ class WebServer:
             self._r[(method.upper(), path)] = handler
 
     @staticmethod
-    async def _dch(req: Request, resp: Response):
+    def _dch(req: Request, resp: Response):
         "Default catch-all handler"
         resp.set_status(b"404 Not Found")
         return "Not Found"
@@ -278,14 +285,14 @@ class WebServer:
         return h
 
     @staticmethod
-    async def _deh(req: Request, resp: Response, e: Exception):
+    def _deh(req: Request, resp: Response, e: Exception):
         "Default error handler"
         print("Error while handling:", repr(e))
         resp.set_status(b"500 Internal Server Error")
         resp.set_content_type("text/plain")
         return f"Error: {str(e)}"
 
-    def error_handler(self, h: "ErrorHanlder"):
+    def error_handler(self, h: "ErrorHandler"):
         self._eh = h
         return h
 
@@ -361,14 +368,14 @@ class WebServer:
     async def _handle_request(self, w, req: Request, resp: Response):
         try:
             if h := self._r.get((req.method, req.path)):
-                r = await h(req, resp)
+                r = await _run(h, (req, resp))
             elif req.method == "GET" and (fi := self._get_static(req)):
                 r = fi
             else:
-                r = await self._cah(req, resp)
+                r = await _run(self._cah, (req, resp))
 
         except Exception as e:
-            r = await self._eh(req, resp, e)
+            r = await _run(self._eh, (req, resp, e))
 
         if r is not None:
             resp.set_body(r)
