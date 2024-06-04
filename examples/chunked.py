@@ -14,7 +14,7 @@ app = WebServer()
 
 
 @app.route("/")
-async def hello(req: Request, resp: Response):
+def hello(req: Request, resp: Response):
     def number_generator():
         for i in range(20):
             yield f"<h1>{i}</h1>".encode()

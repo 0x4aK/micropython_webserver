@@ -7,7 +7,7 @@ app = WebServer()
 
 
 @app.route("/")
-async def hello(req: Request, resp: Response):
+def hello(req: Request, resp: Response):
     def body_gen():
         yield (
             b"""<!DOCTYPE html>"""
@@ -31,7 +31,7 @@ async def hello(req: Request, resp: Response):
 
 
 @app.catchall
-async def catchall(req: Request, resp: Response):
+def catchall(req: Request, resp: Response):
     if app.static and (file := File.from_path(app.static + req.path + ".html")):
         return file
 

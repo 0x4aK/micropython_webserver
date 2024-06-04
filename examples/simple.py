@@ -11,7 +11,7 @@ app = WebServer()
 
 
 @app.route("/")
-async def hello(req: Request, resp: Response):
+def hello(req: Request, resp: Response):
     return "Hello world!"
 
 
