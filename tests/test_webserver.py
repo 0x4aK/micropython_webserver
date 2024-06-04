@@ -5,7 +5,7 @@ from collections import namedtuple
 import uwebserver
 
 HOST, PORT = "127.0.0.1", 8000
-APP_TIMEOUT, TEST_TIMEOUT = 30, 10
+TEST_TIMEOUT = 10
 
 
 class Response(namedtuple("Response", "status headers body")):
@@ -65,6 +65,10 @@ async def fetch(method: str, path: str, body: bytes | None):
         return await _read_response(reader)
 
 
+async def timeout(coro, timeout: int = TEST_TIMEOUT):
+    return await asyncio.wait_for(coro, timeout)
+
+
 class TestDefaultWebServer(unittest.TestCase):
     def setUp(self) -> None:
         def error_route(req, resp):
@@ -80,12 +84,12 @@ class TestDefaultWebServer(unittest.TestCase):
         self.app.route("/error")(error_route)
 
         self.loop = asyncio.new_event_loop()
-        self.app_task = self.loop.create_task(asyncio.wait_for(self.app.run(), APP_TIMEOUT))
-        self.loop.run_until_complete(asyncio.wait_for(self.app.wait_ready(), TEST_TIMEOUT))
+        self.loop.run_until_complete(timeout(self.app.start()))
+        self.loop.run_until_complete(timeout(self.app.wait_ready()))
 
     def tearDown(self) -> None:
         self.app.close()
-        self.loop.run_until_complete(self.app_task)
+        self.loop.run_until_complete(timeout(self.app.wait_closed()))
         self.loop.close()
 
     def test_default_catchall_handler(self):
@@ -95,9 +99,7 @@ class TestDefaultWebServer(unittest.TestCase):
             b"Not Found",
         )
 
-        response = self.loop.run_until_complete(
-            asyncio.wait_for(fetch("GET", "/this/route/does/not/exist", None), TEST_TIMEOUT),
-        )
+        response = self.loop.run_until_complete(timeout(fetch("GET", "/invalid-route", None)))
 
         self.assertEqual(response, expected)
 
@@ -108,16 +110,12 @@ class TestDefaultWebServer(unittest.TestCase):
             b"Error: Test Exception",
         )
 
-        response = self.loop.run_until_complete(
-            asyncio.wait_for(fetch("GET", "/error", None), TEST_TIMEOUT),
-        )
+        response = self.loop.run_until_complete(timeout(fetch("GET", "/error", None)))
 
         self.assertEqual(response, expected)
 
     def test_static_file_handling(self):
-        response = self.loop.run_until_complete(
-            asyncio.wait_for(fetch("GET", "/", None), TEST_TIMEOUT),
-        )
+        response = self.loop.run_until_complete(timeout(fetch("GET", "/", None)))
         with open("./" + self.static_folder + "/index.html", "rb") as f:
             expected = f.read()
 
@@ -126,9 +124,7 @@ class TestDefaultWebServer(unittest.TestCase):
         self.assertEqual(response.body, expected)
 
     def test_compressed_static_file_handling(self):
-        response = self.loop.run_until_complete(
-            asyncio.wait_for(fetch("GET", "/favicon.ico", None), TEST_TIMEOUT),
-        )
+        response = self.loop.run_until_complete(timeout(fetch("GET", "/favicon.ico", None)))
         with open("./" + self.static_folder + "/favicon.ico.gz", "rb") as f:
             expected = f.read()
 
@@ -149,9 +145,7 @@ class TestDefaultWebServer(unittest.TestCase):
             b"Bad Request",
         )
 
-        response = self.loop.run_until_complete(
-            asyncio.wait_for(send_invalid_request(), TEST_TIMEOUT),
-        )
+        response = self.loop.run_until_complete(timeout(send_invalid_request()))
 
         self.assertEqual(response, expected)
 
@@ -168,9 +162,7 @@ class TestDefaultWebServer(unittest.TestCase):
             b"Timeout",
         )
 
-        response = self.loop.run_until_complete(
-            asyncio.wait_for(send_incomplete_request(), TEST_TIMEOUT),
-        )
+        response = self.loop.run_until_complete(timeout(send_incomplete_request()))
 
         self.assertEqual(response, expected)
 
@@ -214,12 +206,12 @@ class TestWebServer(unittest.TestCase):
         self.app.error_handler(error_handler)
 
         self.loop = asyncio.new_event_loop()
-        self.app_task = self.loop.create_task(asyncio.wait_for(self.app.run(), APP_TIMEOUT))
-        self.loop.run_until_complete(asyncio.wait_for(self.app.wait_ready(), TEST_TIMEOUT))
+        self.loop.run_until_complete(timeout(self.app.start()))
+        self.loop.run_until_complete(timeout(self.app.wait_ready()))
 
     def tearDown(self) -> None:
         self.app.close()
-        self.loop.run_until_complete(self.app_task)
+        self.loop.run_until_complete(timeout(self.app.wait_closed()))
         self.loop.close()
 
     def test_simple_route(self):
@@ -229,17 +221,13 @@ class TestWebServer(unittest.TestCase):
             b"Hello",
         )
 
-        response = self.loop.run_until_complete(
-            asyncio.wait_for(fetch("GET", "/simple", None), TEST_TIMEOUT)
-        )
+        response = self.loop.run_until_complete(timeout(fetch("GET", "/simple", None)))
 
         self.assertEqual(response, expected)
 
     def test_post_data(self):
         body = b"test string"
-        response = self.loop.run_until_complete(
-            asyncio.wait_for(fetch("POST", "/echo", body), TEST_TIMEOUT)
-        )
+        response = self.loop.run_until_complete(timeout(fetch("POST", "/echo", body)))
 
         self.assertEqual(response.body, body.upper())
 
@@ -250,9 +238,7 @@ class TestWebServer(unittest.TestCase):
             (b""),
         )
 
-        response = self.loop.run_until_complete(
-            asyncio.wait_for(fetch("GET", "/nothing", None), TEST_TIMEOUT)
-        )
+        response = self.loop.run_until_complete(timeout(fetch("GET", "/nothing", None)))
 
         self.assertEqual(response, expected)
 
@@ -263,9 +249,7 @@ class TestWebServer(unittest.TestCase):
             (b"5\r\nbytes\r\n4\r\niter\r\n4\r\ntest\r\n0\r\n\r\n"),
         )
 
-        response = self.loop.run_until_complete(
-            asyncio.wait_for(fetch("GET", "/chunk", None), TEST_TIMEOUT)
-        )
+        response = self.loop.run_until_complete(timeout(fetch("GET", "/chunk", None)))
 
         self.assertEqual(response, expected)
 
@@ -276,9 +260,7 @@ class TestWebServer(unittest.TestCase):
             b"Catch-All",
         )
 
-        response = self.loop.run_until_complete(
-            asyncio.wait_for(fetch("GET", "/this/route/does/not/exist", None), TEST_TIMEOUT)
-        )
+        response = self.loop.run_until_complete(timeout(fetch("GET", "/invalid-route", None)))
 
         self.assertEqual(response, expected)
 
@@ -289,9 +271,7 @@ class TestWebServer(unittest.TestCase):
             b"Error",
         )
 
-        response = self.loop.run_until_complete(
-            asyncio.wait_for(fetch("GET", "/error", None), TEST_TIMEOUT),
-        )
+        response = self.loop.run_until_complete(timeout(fetch("GET", "/error", None)))
 
         self.assertEqual(response, expected)
 
