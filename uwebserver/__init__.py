@@ -69,9 +69,10 @@ async def _run(h, args: tuple) -> "Results":
 
 def _split(b: str, sep: str, max: int | None = None):
     s = i = n = 0
+    sl = len(sep)
     while (n < max if max is not None else True) and (i := b.find(sep, s)) > 0:
         yield b[s:i]
-        s, n = i + len(sep), n + 1
+        s, n = i + sl, n + 1
     yield b[s:]
 
 

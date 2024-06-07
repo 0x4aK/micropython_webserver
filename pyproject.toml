@@ -1,6 +1,6 @@
 [project]
 name = "uwebserver"
-version = "0.3.0"
+version = "0.3.1"
 authors = [{ name = "0x4aK" }]
 description = "Simple web server for micropython"
 readme = "README.md"
