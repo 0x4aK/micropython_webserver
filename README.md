@@ -27,4 +27,4 @@ def hello(req: Request, resp: Response):
 asyncio.run(app.run())
 ```
 
-**Check out [📁examples](https://github.com/0x4aK/uWebServer/blob/master/examples) for more**
+**Check out [📁examples](https://github.com/jykob/uWebServer/blob/master/examples) for more**

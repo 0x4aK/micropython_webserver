@@ -1,7 +1,7 @@
 [project]
 name = "uwebserver"
-version = "0.3.1"
-authors = [{ name = "0x4aK" }]
+version = "0.3.2"
+authors = [{ name = "jykob" }]
 description = "Simple web server for micropython"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -15,7 +15,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
 ]
 license = { file = "LICENSE" }
-urls = { repository = "https://github.com/0x4aK/uWebServer" }
+urls = { repository = "https://github.com/jykob/uWebServer" }
 
 [project.optional-dependencies]
 dev = ["ruff >= 0.4.4", "pyright >= 1.1.362"]
@@ -33,5 +33,4 @@ reportMissingImports = false
 
 [tool.ruff]
 line-length = 100
-lint = { select = ["E", "F", "I", "UP", "SIM"] }
-ignore = ["UP037", "E731"]
+lint = { select = ["E", "F", "I", "UP", "SIM"], ignore = ["UP037", "E731"] }
