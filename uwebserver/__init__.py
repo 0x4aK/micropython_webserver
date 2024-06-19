@@ -14,12 +14,14 @@ _is_coro = getattr(asyncio, "iscoroutinefunction", lambda f: type(f).__name__ ==
 
 try:
     from collections.abc import Awaitable, Callable, Iterable
-    from typing import TYPE_CHECKING, Literal, TypeAlias, TypeGuard
+    from typing import TYPE_CHECKING, Generic, Literal, TypeAlias, TypeGuard, TypeVar
 except ImportError:
     TYPE_CHECKING = False
+    Generic = type("Generic", (), {"__getitem__": lambda s, n: object})()
 
 
 if TYPE_CHECKING:
+    TStatic = TypeVar("TStatic", bound=str | None)
     StrDict: TypeAlias = "dict[str,str]"
     BytesIter: TypeAlias = "Iterable[bytes]"
     Body: TypeAlias = "bytes|BytesIter|File|None"
@@ -245,13 +247,13 @@ class Response:
         self.headers["content-type"] = ct
 
 
-class WebServer:
+class WebServer(Generic["TStatic"]):
     def __init__(
         self,
         *,
         host: str = "0.0.0.0",
         port: int = 80,
-        static_folder: str | None = "static",
+        static_folder: "TStatic" = "static",
         request_timeout: float = 5,
     ) -> None:
         self.static = static_folder
