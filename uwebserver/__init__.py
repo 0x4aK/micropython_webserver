@@ -39,7 +39,6 @@ _TStatic = TypeVar("_TStatic", bound="str | None")
 _READ_SIZE = micropython.const(128)
 _WRITE_BUFFER_SIZE = micropython.const(128)
 _FILE_INDICATOR = micropython.const(1 << 16)
-_INVALID_STATE = micropython.const(Exception("Invalid state"))
 
 _WRITE_BUFFER = bytearray(_WRITE_BUFFER_SIZE)
 
@@ -142,18 +141,18 @@ class _Future:
         self._er = None
 
     def set_result(self, result):
-        self._r = result if self._r is self._o else _raise(_INVALID_STATE)
+        self._r = result if self._r is self._o else _raise(Exception("Invalid state"))
         self._e.set()
 
     def set_exception(self, exception: BaseException):
-        self._er = exception if self._r is self._o else _raise(_INVALID_STATE)
+        self._er = exception if self._r is self._o else _raise(Exception("Invalid state"))
         self._e.set()
 
     def result(self):
         if self._er is not None:
             raise self._er
         if self._r is self._o:
-            raise _INVALID_STATE
+            raise Exception("Invalid state")
         return self._r
 
     def __await__(self):
