@@ -11,6 +11,10 @@ except ImportError:
 
 _is_coro = getattr(asyncio, "iscoroutinefunction", lambda f: type(f).__name__ == "generator")
 
+# fmt: off
+try: import typing  # noqa
+except: pass  # noqa
+# fmt: on
 
 try:
     from collections.abc import Awaitable, Callable, Iterable
@@ -18,10 +22,9 @@ try:
 except ImportError:
     TYPE_CHECKING = False
     Generic = type("Generic", (), {"__getitem__": lambda s, n: object})()
-
+    TypeVar = type("TypeVar", (), {"__call__": lambda *a, **kw: None})  # type: type[typing.TypeVar] #type: ignore
 
 if TYPE_CHECKING:
-    TStatic = TypeVar("TStatic", bound=str | None)
     StrDict: TypeAlias = "dict[str,str]"
     BytesIter: TypeAlias = "Iterable[bytes]"
     Body: TypeAlias = "bytes|BytesIter|File|None"
@@ -30,6 +33,8 @@ if TYPE_CHECKING:
     ErrorHandler: TypeAlias = "Callable[[Request,Response,Exception],Results|Awaitable[Results]]"
     Methods: TypeAlias = "Iterable[Literal['GET','POST','DELETE','PUT','HEAD','OPTIONS']]"
     Encodings: TypeAlias = "Literal['gzip']"
+
+_TStatic = TypeVar("_TStatic", bound="str | None")
 
 _READ_SIZE = micropython.const(128)
 _WRITE_BUFFER_SIZE = micropython.const(128)
@@ -247,13 +252,13 @@ class Response:
         self.headers["content-type"] = ct
 
 
-class WebServer(Generic["TStatic"]):
+class WebServer(Generic[_TStatic]):
     def __init__(
         self,
         *,
         host: str = "0.0.0.0",
         port: int = 80,
-        static_folder: "TStatic" = "static",
+        static_folder: "_TStatic" = "static",
         request_timeout: float = 5,
     ) -> None:
         self.static = static_folder
