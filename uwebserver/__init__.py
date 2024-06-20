@@ -11,9 +11,9 @@ except ImportError:
 
 _is_coro = getattr(asyncio, "iscoroutinefunction", lambda f: type(f).__name__ == "generator")
 
-try:  # noqa
-    import typing  # noqa
-except:  # noqa
+try:
+    import typing
+except:
     pass
 
 try:

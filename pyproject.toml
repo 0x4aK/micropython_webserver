@@ -33,4 +33,16 @@ reportMissingImports = false
 
 [tool.ruff]
 line-length = 100
-lint = { select = ["E", "F", "I", "UP", "SIM"], ignore = ["UP037", "E731"] }
+lint = { select = [
+    "E",
+    "F",
+    "I",
+    "UP",
+    "SIM",
+], ignore = [
+    "UP037",
+    "E731",
+    "SIM105",
+    "F401",
+    "E722",
+] }
