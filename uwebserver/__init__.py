@@ -11,10 +11,10 @@ except ImportError:
 
 _is_coro = getattr(asyncio, "iscoroutinefunction", lambda f: type(f).__name__ == "generator")
 
-# fmt: off
-try: import typing  # noqa
-except: pass  # noqa
-# fmt: on
+try:  # noqa
+    import typing  # noqa
+except:  # noqa
+    pass
 
 try:
     from collections.abc import Awaitable, Callable, Iterable
