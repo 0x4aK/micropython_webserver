@@ -11,13 +11,18 @@ except ImportError:
 
 _is_coro = getattr(asyncio, "iscoroutinefunction", lambda f: type(f).__name__ == "generator")
 
+try:
+    import typing
+except:
+    pass
 
 try:
     from collections.abc import Awaitable, Callable, Iterable
-    from typing import TYPE_CHECKING, Literal, TypeAlias, TypeGuard
+    from typing import TYPE_CHECKING, Generic, Literal, TypeAlias, TypeGuard, TypeVar
 except ImportError:
     TYPE_CHECKING = False
-
+    Generic = type("Generic", (), {"__getitem__": lambda s, n: object})()
+    TypeVar = type("TypeVar", (), {"__call__": lambda *a, **kw: None})  # type: type[typing.TypeVar] #type: ignore
 
 if TYPE_CHECKING:
     StrDict: TypeAlias = "dict[str,str]"
@@ -29,10 +34,11 @@ if TYPE_CHECKING:
     Methods: TypeAlias = "Iterable[Literal['GET','POST','DELETE','PUT','HEAD','OPTIONS']]"
     Encodings: TypeAlias = "Literal['gzip']"
 
+_TStatic = TypeVar("_TStatic", bound="str | None")
+
 _READ_SIZE = micropython.const(128)
 _WRITE_BUFFER_SIZE = micropython.const(128)
 _FILE_INDICATOR = micropython.const(1 << 16)
-_INVALID_STATE = micropython.const(Exception("Invalid state"))
 
 _WRITE_BUFFER = bytearray(_WRITE_BUFFER_SIZE)
 
@@ -135,18 +141,18 @@ class _Future:
         self._er = None
 
     def set_result(self, result):
-        self._r = result if self._r is self._o else _raise(_INVALID_STATE)
+        self._r = result if self._r is self._o else _raise(Exception("Invalid state"))
         self._e.set()
 
     def set_exception(self, exception: BaseException):
-        self._er = exception if self._r is self._o else _raise(_INVALID_STATE)
+        self._er = exception if self._r is self._o else _raise(Exception("Invalid state"))
         self._e.set()
 
     def result(self):
         if self._er is not None:
             raise self._er
         if self._r is self._o:
-            raise _INVALID_STATE
+            raise Exception("Invalid state")
         return self._r
 
     def __await__(self):
@@ -245,13 +251,13 @@ class Response:
         self.headers["content-type"] = ct
 
 
-class WebServer:
+class WebServer(Generic[_TStatic]):
     def __init__(
         self,
         *,
         host: str = "0.0.0.0",
         port: int = 80,
-        static_folder: str | None = "static",
+        static_folder: "_TStatic" = "static",
         request_timeout: float = 5,
     ) -> None:
         self.static = static_folder
